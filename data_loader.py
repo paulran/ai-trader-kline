@@ -24,7 +24,16 @@ class DataLoader:
         
         if 'Time' in df.columns:
             try:
-                df['Time'] = pd.to_datetime(df['Time'])
+                if pd.api.types.is_numeric_dtype(df['Time']):
+                    first_value = df['Time'].iloc[0]
+                    if first_value > 1e12:
+                        df['Time'] = pd.to_datetime(df['Time'], unit='ms')
+                    elif first_value > 1e9:
+                        df['Time'] = pd.to_datetime(df['Time'], unit='s')
+                    else:
+                        df['Time'] = pd.to_datetime(df['Time'])
+                else:
+                    df['Time'] = pd.to_datetime(df['Time'])
             except Exception as e:
                 raise ValueError(f"时间格式转换失败: {e}")
         
