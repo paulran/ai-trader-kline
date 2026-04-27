@@ -119,3 +119,5 @@ test_*.py
 *__test*
 *_test.json
 *_backup_*
+
+data/*

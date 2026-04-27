@@ -6,7 +6,7 @@ import pandas as pd
 from datetime import datetime
 from typing import Dict, List, Optional
 from config import Config
-from main import StockTrader
+from stock_trader import StockTrader
 
 
 OKX_DELAY_SECONDS = 10
