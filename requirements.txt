@@ -1,0 +1,23 @@
+# 核心数据处理
+numpy>=1.21.0
+pandas>=1.3.0
+
+# 深度学习和强化学习
+torch>=1.10.0
+
+# LLM模型支持
+transformers>=4.25.0
+accelerate>=0.15.0
+sentencepiece>=0.1.97
+protobuf>=3.20.0
+
+# API调用支持
+requests>=2.28.0
+
+# 其他工具
+tqdm>=4.64.0
+
+# 可选 - 如需更好的性能或更多功能
+# bitsandbytes>=0.37.0  # 用于8bit量化加载，需要CUDA
+# scipy>=1.7.0          # 科学计算
+# matplotlib>=3.5.0     # 数据可视化
