@@ -11,10 +11,11 @@ ai-trader-kline/
 ├── trading_env.py      # 强化学习交易环境
 ├── dqn_model.py        # DQN强化学习模型
 ├── deepseek_analyzer.py # DeepSeek LLM分析器
-├── main.py             # 主程序入口（包含所有运行模式）
+├── realtime_analyzer.py # 实时K线分析器（时间对齐+OKX数据获取）
+├── main.py             # 主程序入口
 ├── requirements.txt    # 依赖包列表
 ├── tools/
-│   └── get_okx_1min_candle_data.py  # OKX 1分钟K线数据获取工具（一次性）
+│   └── get_okx_1min_candle_data.py  # OKX K线数据获取工具（一次性）
 ├── data/
 │   ├── train/          # 训练数据
 │   ├── test/           # 测试数据
@@ -54,10 +55,11 @@ ai-trader-kline/
 - 信号组合功能：结合RL和LLM的结果
 
 ### 5. 主程序 (`main.py`)
-- **三种运行模式**：
+- **四种运行模式**：
   - `train`：训练强化学习模型
   - `predict`：使用训练好的模型进行预测
   - `interactive`：交互模式，支持实时命令操作
+  - `realtime`：实时模式，定时从OKX获取K线数据并进行AI分析
 
 ## 使用方法
 
@@ -91,14 +93,90 @@ python main.py --mode interactive
 - `portfolio` - 查看投资组合状态
 - `reset` - 重置投资组合
 
+### 5. 实时模式（自动从OKX获取K线数据）
+
+**1分钟K线实时分析**（默认每60秒刷新一次）：
+```bash
+python main.py --mode realtime --bar 1m
+```
+
+**15分钟K线实时分析**（默认每900秒刷新一次）：
+```bash
+python main.py --mode realtime --bar 15m
+```
+
+**自定义刷新间隔**（例如120秒）：
+```bash
+python main.py --mode realtime --bar 1m --interval 120
+```
+
+**仅运行一次**（不进行定时循环）：
+```bash
+python main.py --mode realtime --bar 1m --once
+```
+
+**启用模拟交易**：
+```bash
+python main.py --mode realtime --bar 1m --simulate
+```
+
+**禁用LLM分析**（仅使用规则分析）：
+```bash
+python main.py --mode realtime --bar 1m --no_llm
+```
+
+**不保存数据到CSV**：
+```bash
+python main.py --mode realtime --bar 1m --no_save
+```
+
+**完整参数示例**：
+```bash
+python main.py --mode realtime \
+    --bar 1m \
+    --interval 60 \
+    --model_path ./checkpoints/best_model.pt \
+    --simulate
+```
+
 ## 配置选项
 
 可以通过环境变量或修改`config.py`来自定义：
 
+### 基础配置
 - **模型配置**：选择DeepSeek模型名称、设备（CPU/GPU）
 - **强化学习参数**：学习率、gamma、epsilon衰减等
 - **交易参数**：初始资金、手续费率、窗口大小、最大交易股数
 - **API配置**：如果使用DeepSeek API，需要设置`DEEPSEEK_API_KEY`
+
+### OKX API配置（实时模式）
+| 环境变量 | 默认值 | 说明 |
+|---------|-------|------|
+| `OKX_API_URL` | `https://www.okx.com/api/v5/market/candles` | OKX API地址 |
+| `OKX_INST_ID` | `BTC-USDT` | 交易对，如 BTC-USDT, ETH-USDT 等 |
+| `OKX_TIMEOUT` | `20` | API请求超时时间（秒） |
+| `HTTP_PROXY` / `HTTPS_PROXY` | 无 | 代理服务器地址（如需翻墙访问OKX） |
+
+### 实时分析配置
+| 环境变量 | 默认值 | 说明 |
+|---------|-------|------|
+| `REALTIME_INTERVAL_1M` | `60` | 1分钟K线刷新间隔（秒） |
+| `REALTIME_INTERVAL_15M` | `900` | 15分钟K线刷新间隔（秒） |
+| `REALTIME_DATA_PATH` | `./data/realtime` | 实时数据保存目录 |
+| `REALTIME_USE_LLM` | `true` | 是否使用LLM分析 |
+| `REALTIME_SIMULATE_TRADE` | `false` | 是否启用模拟交易 |
+
+### 代理设置
+如果需要通过代理访问OKX API，可以设置环境变量：
+```bash
+# Windows
+set HTTP_PROXY=http://127.0.0.1:7890
+set HTTPS_PROXY=http://127.0.0.1:7890
+
+# Linux/Mac
+export HTTP_PROXY=http://127.0.0.1:7890
+export HTTPS_PROXY=http://127.0.0.1:7890
+```
 
 ## 信号组合机制
 
