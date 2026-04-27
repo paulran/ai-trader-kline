@@ -11,11 +11,10 @@ ai-trader-kline/
 ├── trading_env.py      # 强化学习交易环境
 ├── dqn_model.py        # DQN强化学习模型
 ├── deepseek_analyzer.py # DeepSeek LLM分析器
-├── main.py             # 主程序入口
+├── main.py             # 主程序入口（包含所有运行模式）
 ├── requirements.txt    # 依赖包列表
 ├── tools/
-│   ├── get_okx_1min_candle_data.py  # OKX 1分钟K线数据获取工具
-│   └── realtime_kline_analyzer.py   # 实时K线分析器（定时获取+AI分析）
+│   └── get_okx_1min_candle_data.py  # OKX 1分钟K线数据获取工具（一次性）
 ├── data/
 │   ├── train/          # 训练数据
 │   ├── test/           # 测试数据
