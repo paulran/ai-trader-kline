@@ -43,9 +43,24 @@ class Config:
     BEST_MODEL_PATH = os.path.join(CHECKPOINT_PATH, "best_model.pt")
     LATEST_MODEL_PATH = os.path.join(CHECKPOINT_PATH, "latest_model.pt")
     
+    # OKX API配置
+    OKX_API_URL = os.getenv("OKX_API_URL", "https://www.okx.com/api/v5/market/candles")
+    OKX_INST_ID = os.getenv("OKX_INST_ID", "BTC-USDT")
+    OKX_BAR_1M = "1m"
+    OKX_BAR_15M = "15m"
+    OKX_TIMEOUT = int(os.getenv("OKX_TIMEOUT", "20"))
+    
+    # 实时分析配置
+    REALTIME_INTERVAL_1M = int(os.getenv("REALTIME_INTERVAL_1M", "60"))
+    REALTIME_INTERVAL_15M = int(os.getenv("REALTIME_INTERVAL_15M", "900"))
+    REALTIME_DATA_PATH = os.getenv("REALTIME_DATA_PATH", os.path.join(DATA_PATH, "realtime"))
+    REALTIME_USE_LLM = os.getenv("REALTIME_USE_LLM", "true").lower() == "true"
+    REALTIME_SIMULATE_TRADE = os.getenv("REALTIME_SIMULATE_TRADE", "false").lower() == "true"
+    
     @classmethod
     def create_directories(cls):
         os.makedirs(cls.DATA_PATH, exist_ok=True)
         os.makedirs(cls.TRAIN_DATA_PATH, exist_ok=True)
         os.makedirs(cls.TEST_DATA_PATH, exist_ok=True)
         os.makedirs(cls.CHECKPOINT_PATH, exist_ok=True)
+        os.makedirs(cls.REALTIME_DATA_PATH, exist_ok=True)
