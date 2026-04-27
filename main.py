@@ -125,10 +125,14 @@ class StockTrader:
                 action_size=action_size
             )
         
-        self.agent.load_model(model_path)
-        self.agent.epsilon = self.config.RL_EPSILON_END
-        
-        print("模型加载完成，准备进行预测")
+        try:
+            self.agent.load_model(model_path)
+            self.agent.epsilon = self.config.RL_EPSILON_END
+            print("模型加载完成，准备进行预测")
+        except Exception as e:
+            print(f"警告: 模型加载失败: {e}")
+            print("将禁用强化学习模型，仅使用LLM分析和规则分析")
+            self.agent = None
     
     def initialize_analyzer(self):
         if self.analyzer is None:
@@ -344,12 +348,28 @@ def main():
     elif args.mode == 'predict':
         print("预测模式")
         
+        model_loaded = False
         if args.model_path:
-            trader.load_trained_model(args.model_path)
+            try:
+                trader.load_trained_model(args.model_path)
+                model_loaded = True
+            except Exception as e:
+                print(f"警告: 加载指定模型失败: {e}")
+                print("将尝试使用默认模型路径，或仅使用LLM分析")
         elif os.path.exists(config.BEST_MODEL_PATH):
-            trader.load_trained_model(config.BEST_MODEL_PATH)
+            try:
+                trader.load_trained_model(config.BEST_MODEL_PATH)
+                model_loaded = True
+            except Exception as e:
+                print(f"警告: 加载默认模型失败: {e}")
         else:
-            print("警告: 未找到训练好的模型，将仅使用LLM分析")
+            print("提示: 未找到预训练模型，将仅使用LLM分析和规则分析")
+            print("      可以先运行 `python main.py --mode train` 来训练模型")
+        
+        if not model_loaded:
+            print("\n建议:")
+            print("  1. 如需使用强化学习模型，请先运行: python main.py --mode train --episodes 1000")
+            print("  2. 当前将使用LLM分析和规则分析进行预测\n")
         
         if args.use_llm:
             trader.initialize_analyzer()

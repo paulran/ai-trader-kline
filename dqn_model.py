@@ -8,6 +8,19 @@ from collections import deque
 from typing import Dict, List, Optional, Tuple
 from config import Config
 
+
+def _check_cuda_compatibility() -> bool:
+    try:
+        if torch.cuda.is_available():
+            cuda_version = torch.version.cuda
+            driver_version = torch.cuda.get_device_capability()
+            print(f"CUDA版本: {cuda_version}")
+            print(f"设备能力: {driver_version}")
+            return True
+    except Exception as e:
+        print(f"CUDA兼容性检查失败: {e}")
+    return False
+
 class ReplayBuffer:
     def __init__(self, capacity: int):
         self.buffer = deque(maxlen=capacity)
@@ -81,9 +94,16 @@ class DQNAgent:
         
         self.epsilon = self.epsilon_start
         
-        self.device = torch.device("cuda" if torch.cuda.is_available() and self.config.MODEL_DEVICE == "cuda" 
-                                   else "mps" if torch.backends.mps.is_available() and self.config.MODEL_DEVICE == "mps"
-                                   else "cpu")
+        cuda_available = False
+        if self.config.MODEL_DEVICE == "cuda":
+            cuda_available = _check_cuda_compatibility()
+        
+        if cuda_available:
+            self.device = torch.device("cuda")
+        elif self.config.MODEL_DEVICE == "mps" and torch.backends.mps.is_available():
+            self.device = torch.device("mps")
+        else:
+            self.device = torch.device("cpu")
         
         print(f"使用设备: {self.device}")
         
@@ -157,22 +177,52 @@ class DQNAgent:
         return loss.item()
     
     def save_model(self, path: str):
-        torch.save({
+        import os
+        
+        checkpoint_dir = os.path.dirname(path)
+        if checkpoint_dir and not os.path.exists(checkpoint_dir):
+            os.makedirs(checkpoint_dir, exist_ok=True)
+        
+        checkpoint = {
             'policy_net_state_dict': self.policy_net.state_dict(),
             'target_net_state_dict': self.target_net.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
-            'epsilon': self.epsilon,
-            'steps_done': self.steps_done,
-            'best_reward': self.best_reward
-        }, path)
+            'epsilon': float(self.epsilon),
+            'steps_done': int(self.steps_done),
+            'best_reward': float(self.best_reward) if self.best_reward != float('-inf') else -1e18
+        }
+        
+        torch.save(checkpoint, path)
         print(f"模型已保存到: {path}")
     
     def load_model(self, path: str):
-        checkpoint = torch.load(path, map_location=self.device)
+        try:
+            try:
+                checkpoint = torch.load(
+                    path, 
+                    map_location=self.device, 
+                    weights_only=False
+                )
+            except TypeError:
+                checkpoint = torch.load(path, map_location=self.device)
+        except Exception as e:
+            print(f"加载模型时遇到问题，尝试使用安全加载方式: {e}")
+            try:
+                import warnings
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    checkpoint = torch.load(path, map_location=self.device, weights_only=False)
+            except Exception as e2:
+                raise RuntimeError(f"无法加载模型文件 {path}: {e2}")
+        
         self.policy_net.load_state_dict(checkpoint['policy_net_state_dict'])
         self.target_net.load_state_dict(checkpoint['target_net_state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        self.epsilon = checkpoint.get('epsilon', self.epsilon_end)
-        self.steps_done = checkpoint.get('steps_done', 0)
-        self.best_reward = checkpoint.get('best_reward', float('-inf'))
+        
+        self.epsilon = float(checkpoint.get('epsilon', self.epsilon_end))
+        self.steps_done = int(checkpoint.get('steps_done', 0))
+        
+        best_reward_val = checkpoint.get('best_reward', -1e18)
+        self.best_reward = float('-inf') if best_reward_val <= -1e18 else float(best_reward_val)
+        
         print(f"模型已从 {path} 加载")
