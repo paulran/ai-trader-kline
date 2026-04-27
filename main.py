@@ -1,12 +1,7 @@
 import argparse
-import csv
 import os
-import sys
-import time
-import requests
 import pandas as pd
 import numpy as np
-from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
 from config import Config
@@ -318,266 +313,304 @@ class StockTrader:
         print(f"已加载 {len(self.historical_klines)} 根历史K线数据")
 
 
-class RealtimeKlineAnalyzer:
-    def __init__(self, config: Config = None, bar_type: str = "1m", interval: int = None):
-        self.config = config or Config()
-        self.config.create_directories()
-        
-        self.bar_type = bar_type
-        if bar_type == "1m":
-            self.interval = interval or self.config.REALTIME_INTERVAL_1M
-            self.bar = self.config.OKX_BAR_1M
-        elif bar_type == "15m":
-            self.interval = interval or self.config.REALTIME_INTERVAL_15M
-            self.bar = self.config.OKX_BAR_15M
-        else:
-            raise ValueError(f"不支持的K线周期: {bar_type}，支持 1m 和 15m")
-        
-        self.trader: Optional[StockTrader] = None
-        self.running = False
-        self.last_kline_time: Optional[int] = None
-        
-        self.proxies = {
-            "http": os.getenv("HTTP_PROXY"),
-            "https": os.getenv("HTTPS_PROXY")
-        }
+def run_train_mode(config: Config, args) -> None:
+    trader = StockTrader(config)
+    print(f"开始训练模式，回合数: {args.episodes}")
+    trader.train(episodes=args.episodes, verbose=args.verbose)
+
+
+def run_predict_mode(config: Config, args) -> None:
+    trader = StockTrader(config)
     
-    def initialize_trader(self, model_path: str = None, use_llm: bool = True):
-        print("="*60)
-        print("初始化 AI Trader...")
-        print("="*60)
-        
-        self.trader = StockTrader(self.config)
-        
-        model_loaded = False
-        if model_path:
-            try:
-                self.trader.load_trained_model(model_path)
-                model_loaded = True
-            except Exception as e:
-                print(f"警告: 加载指定模型失败: {e}")
-                print("将尝试使用默认模型路径，或仅使用LLM分析")
-        elif os.path.exists(self.config.BEST_MODEL_PATH):
-            try:
-                self.trader.load_trained_model(self.config.BEST_MODEL_PATH)
-                model_loaded = True
-            except Exception as e:
-                print(f"警告: 加载默认模型失败: {e}")
-        else:
-            print("提示: 未找到预训练模型，将仅使用LLM分析和规则分析")
-        
-        if not model_loaded:
-            print("\n建议:")
-            print("  1. 如需使用强化学习模型，请先运行: python main.py --mode train")
-            print("  2. 当前将使用LLM分析和规则分析进行预测\n")
-        
-        if use_llm:
-            self.trader.initialize_analyzer()
-        
-        print("AI Trader 初始化完成")
-        print("="*60)
+    print("预测模式")
     
-    def fetch_okx_candles(self) -> Optional[List[List]]:
-        params = {
-            "instId": self.config.OKX_INST_ID,
-            "bar": self.bar
-        }
-        
+    model_loaded = False
+    if args.model_path:
         try:
-            response = requests.get(
-                self.config.OKX_API_URL,
-                params=params,
-                timeout=self.config.OKX_TIMEOUT,
-                proxies=self.proxies
-            )
-            response.raise_for_status()
-            data = response.json()
-            
-            if data.get("code") != "0":
-                print(f"API请求失败 | code: {data.get('code')}, msg: {data.get('msg')}")
-                return None
-            
-            candle_data = data.get("data", [])
-            if not candle_data:
-                print("未获取到K线数据")
-                return None
-            
-            return candle_data
-            
-        except requests.exceptions.RequestException as e:
-            print(f"网络错误: {str(e)}")
-            return None
+            trader.load_trained_model(args.model_path)
+            model_loaded = True
         except Exception as e:
-            print(f"意外错误: {str(e)}")
-            return None
+            print(f"警告: 加载指定模型失败: {e}")
+            print("将尝试使用默认模型路径，或仅使用LLM分析")
+    elif os.path.exists(config.BEST_MODEL_PATH):
+        try:
+            trader.load_trained_model(config.BEST_MODEL_PATH)
+            model_loaded = True
+        except Exception as e:
+            print(f"警告: 加载默认模型失败: {e}")
+    else:
+        print("提示: 未找到预训练模型，将仅使用LLM分析和规则分析")
+        print("      可以先运行 `python main.py --mode train` 来训练模型")
     
-    def save_candles_to_csv(self, candle_data: List[List]) -> str:
-        headers = ['Time', 'Open', 'High', 'Low', 'Close', 'Volume']
-        
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        file_name = f"{self.config.OKX_INST_ID}_{self.bar}_{timestamp}.csv"
-        file_path = os.path.join(self.config.REALTIME_DATA_PATH, file_name)
-        
-        with open(file_path, "w", newline="", encoding="utf-8-sig") as f:
-            writer = csv.writer(f)
-            writer.writerow(headers)
-            
-            for row in candle_data:
-                writer.writerow(row[:6])
-        
-        print(f"数据已保存: {file_path}")
-        return file_path
+    if not model_loaded:
+        print("\n建议:")
+        print("  1. 如需使用强化学习模型，请先运行: python main.py --mode train --episodes 1000")
+        print("  2. 当前将使用LLM分析和规则分析进行预测\n")
     
-    def candles_to_dataframe(self, candle_data: List[List]) -> pd.DataFrame:
-        rows = []
-        for row in candle_data:
-            rows.append({
-                'Time': int(row[0]),
-                'Open': float(row[1]),
-                'High': float(row[2]),
-                'Low': float(row[3]),
-                'Close': float(row[4]),
-                'Volume': float(row[5])
-            })
-        
-        df = pd.DataFrame(rows)
-        df = df.sort_values('Time').reset_index(drop=True)
-        return df
+    if args.use_llm:
+        trader.initialize_analyzer()
     
-    def analyze_candles(self, candle_data: List[List], use_llm: bool = True) -> Optional[Dict]:
-        if self.trader is None:
-            print("错误: Trader未初始化")
-            return None
+    if args.kline_file:
+        print(f"加载K线文件: {args.kline_file}")
+        data = trader.data_loader.load_csv_file(args.kline_file)
+        trader.load_historical_data(data)
         
-        df = self.candles_to_dataframe(candle_data)
+        print(f"已加载 {len(data)} 根K线，开始分析最后一根K线...")
         
-        latest = df.iloc[-1]
-        current_kline_time = int(latest['Time'])
-        
-        if self.last_kline_time is not None and current_kline_time == self.last_kline_time:
-            print("K线数据未更新，跳过分析")
-            return None
-        
-        self.last_kline_time = current_kline_time
-        
-        if self.trader.historical_klines.empty:
-            self.trader.load_historical_data(df)
-        
-        latest_row = df.iloc[-1]
-        time_ms = int(latest_row['Time'])
-        time_str = datetime.fromtimestamp(time_ms / 1000).strftime('%Y-%m-%d %H:%M:%S')
-        
-        result = self.trader.predict_single_kline(
-            time=time_str,
-            open=latest_row['Open'],
-            high=latest_row['High'],
-            low=latest_row['Low'],
-            close=latest_row['Close'],
-            volume=latest_row['Volume'],
-            use_llm=use_llm
+        latest = data.iloc[-1]
+        result = trader.predict_single_kline(
+            time=str(latest['Time']),
+            open=latest['Open'],
+            high=latest['High'],
+            low=latest['Low'],
+            close=latest['Close'],
+            volume=latest['Volume'],
+            use_llm=args.use_llm
         )
         
-        return result
-    
-    def print_analysis_result(self, result: Dict, simulate_trade: bool = False):
-        if not result:
-            return
-        
         print("\n" + "="*60)
-        print(f"分析结果 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print("预测结果")
         print("="*60)
         
-        kline_info = result.get('kline_info', {})
-        print(f"\nK线信息:")
-        print(f"  时间: {kline_info.get('time', 'N/A')}")
-        print(f"  开盘: {kline_info.get('open', 0):.2f}")
-        print(f"  最高: {kline_info.get('high', 0):.2f}")
-        print(f"  最低: {kline_info.get('low', 0):.2f}")
-        print(f"  收盘: {kline_info.get('close', 0):.2f}")
-        print(f"  成交量: {kline_info.get('volume', 0):,}")
-        
-        rl_pred = result.get('rl_prediction')
-        if rl_pred:
+        if result['rl_prediction']:
             print(f"\n强化学习预测:")
-            print(f"  推荐操作: {rl_pred['action']}")
-            print(f"  Q值: {[f'{q:.4f}' for q in rl_pred['q_values']]}")
+            print(f"  推荐操作: {result['rl_prediction']['action']}")
+            print(f"  Q值: {result['rl_prediction']['q_values']}")
         
-        llm_analysis = result.get('llm_analysis')
-        if llm_analysis:
+        if result['llm_analysis']:
             print(f"\nLLM分析结果:")
-            print(f"  技术分析: {llm_analysis.get('analysis', 'N/A')}")
-            print(f"  风险评估: {llm_analysis.get('risk_assessment', 'N/A')}")
-            print(f"  推荐操作: {llm_analysis.get('recommended_action', 'N/A')}")
-            print(f"  置信度: {llm_analysis.get('confidence', 0):.2f}")
+            print(f"  技术分析: {result['llm_analysis']['analysis']}")
+            print(f"  风险评估: {result['llm_analysis']['risk_assessment']}")
+            print(f"  推荐操作: {result['llm_analysis']['recommended_action']}")
+            print(f"  置信度: {result['llm_analysis']['confidence']:.2f}")
         
-        final_decision = result.get('final_decision')
-        if final_decision:
+        if result['final_decision']:
             print(f"\n{'='*60}")
-            print(f"最终决策: {final_decision['action']}")
+            print(f"最终决策: {result['final_decision']['action']}")
             print(f"{'='*60}")
             
-            if 'combination_info' in final_decision:
-                print(final_decision['combination_info']['combination_reason'])
-            
-            if simulate_trade and self.trader:
-                close_price = kline_info.get('close', 0)
-                if close_price > 0:
-                    self.trader.simulate_trade(final_decision['action'], close_price)
-        
-        print("="*60 + "\n")
+            if 'combination_info' in result['final_decision']:
+                print(result['final_decision']['combination_info']['combination_reason'])
     
-    def run_once(self, use_llm: bool = True, save_data: bool = True, simulate_trade: bool = False):
-        print(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 开始获取 {self.bar} K线数据...")
+    else:
+        print("\n请输入实时K线数据进行预测:")
+        print("格式: time,open,high,low,close,volume")
+        print("例如: 2024-01-15 10:30:00,150.50,152.00,149.80,151.20,10000000")
+        print("输入 'quit' 退出")
         
-        candle_data = self.fetch_okx_candles()
-        if not candle_data:
-            print("获取K线数据失败")
-            return
-        
-        print(f"成功获取 {len(candle_data)} 根K线数据")
-        
-        if save_data:
-            self.save_candles_to_csv(candle_data)
-        
-        result = self.analyze_candles(candle_data, use_llm)
-        if result:
-            self.print_analysis_result(result, simulate_trade)
-        
-        return result
-    
-    def start(self, use_llm: bool = True, save_data: bool = True, simulate_trade: bool = False):
-        print("="*60)
-        print(f"实时K线分析器启动")
-        print(f"交易对: {self.config.OKX_INST_ID}")
-        print(f"K线周期: {self.bar}")
-        print(f"刷新间隔: {self.interval} 秒")
-        print(f"使用LLM: {'是' if use_llm else '否'}")
-        print(f"保存数据: {'是' if save_data else '否'}")
-        print(f"模拟交易: {'是' if simulate_trade else '否'}")
-        print("="*60)
-        print("按 Ctrl+C 停止\n")
-        
-        self.running = True
-        
-        while self.running:
+        while True:
             try:
-                self.run_once(use_llm, save_data, simulate_trade)
+                user_input = input("\n输入K线数据: ").strip()
                 
-                print(f"等待 {self.interval} 秒后进行下次分析...")
-                time.sleep(self.interval)
+                if user_input.lower() == 'quit':
+                    break
                 
-            except KeyboardInterrupt:
-                print("\n\n收到停止信号，正在退出...")
-                self.running = False
+                parts = user_input.split(',')
+                if len(parts) != 6:
+                    print("错误: 请输入6个字段: time,open,high,low,close,volume")
+                    continue
+                
+                time = parts[0].strip()
+                open_price = float(parts[1].strip())
+                high = float(parts[2].strip())
+                low = float(parts[3].strip())
+                close = float(parts[4].strip())
+                volume = float(parts[5].strip())
+                
+                result = trader.predict_single_kline(
+                    time=time,
+                    open=open_price,
+                    high=high,
+                    low=low,
+                    close=close,
+                    volume=volume,
+                    use_llm=args.use_llm
+                )
+                
+                if result['final_decision']:
+                    print(f"\n推荐操作: {result['final_decision']['action']}")
+                    
+                    if result['llm_analysis']:
+                        print(f"分析: {result['llm_analysis']['analysis']}")
+                        print(f"理由: {result['llm_analysis']['reason']}")
+                    
+                    simulate = input("是否模拟执行此操作? (y/n): ").strip().lower()
+                    if simulate == 'y':
+                        trader.simulate_trade(result['final_decision']['action'], close)
+                
             except Exception as e:
-                print(f"运行时错误: {e}")
-                print(f"等待 {self.interval} 秒后重试...")
-                time.sleep(self.interval)
+                print(f"错误: {e}")
+
+
+def run_interactive_mode(config: Config, args) -> None:
+    trader = StockTrader(config)
+    
+    print("="*60)
+    print("交互模式")
+    print("="*60)
+    print("可用命令:")
+    print("  train - 训练模型")
+    print("  load [path] - 加载模型")
+    print("  kline [data] - 输入单根K线数据进行预测")
+    print("  load_data [file] - 从CSV文件加载历史数据")
+    print("  portfolio - 显示当前投资组合状态")
+    print("  reset - 重置投资组合")
+    print("  help - 显示帮助信息")
+    print("  quit - 退出程序")
+    print("="*60)
+    
+    while True:
+        try:
+            command = input("\nAI Trader > ").strip()
+            
+            if not command:
+                continue
+            
+            parts = command.split()
+            cmd = parts[0].lower()
+            
+            if cmd == 'quit':
+                print("再见!")
+                break
+            
+            elif cmd == 'help':
+                print("""
+命令说明:
+  train [episodes] - 训练模型，可选指定回合数（默认1000）
+  load [path] - 从指定路径加载模型
+  kline time,open,high,low,close,volume - 输入K线数据进行预测
+  load_data [csv_file] - 从CSV文件加载历史K线数据
+  portfolio - 显示当前投资组合状态
+  reset - 重置投资组合
+  quit - 退出程序
+                """)
+            
+            elif cmd == 'train':
+                episodes = int(parts[1]) if len(parts) > 1 else 1000
+                print(f"开始训练，回合数: {episodes}")
+                trader.train(episodes=episodes)
+            
+            elif cmd == 'load':
+                if len(parts) < 2:
+                    if os.path.exists(config.BEST_MODEL_PATH):
+                        trader.load_trained_model(config.BEST_MODEL_PATH)
+                    else:
+                        print("请指定模型路径: load <model_path>")
+                else:
+                    trader.load_trained_model(parts[1])
+            
+            elif cmd == 'kline':
+                if len(parts) < 2:
+                    print("用法: kline time,open,high,low,close,volume")
+                    continue
+                
+                kline_data = ' '.join(parts[1:])
+                data_parts = kline_data.split(',')
+                
+                if len(data_parts) != 6:
+                    print("错误: 请输入6个字段: time,open,high,low,close,volume")
+                    continue
+                
+                try:
+                    time = data_parts[0].strip()
+                    open_price = float(data_parts[1].strip())
+                    high = float(data_parts[2].strip())
+                    low = float(data_parts[3].strip())
+                    close = float(data_parts[4].strip())
+                    volume = float(data_parts[5].strip())
+                    
+                    result = trader.predict_single_kline(
+                        time=time,
+                        open=open_price,
+                        high=high,
+                        low=low,
+                        close=close,
+                        volume=volume,
+                        use_llm=args.use_llm
+                    )
+                    
+                    if result['final_decision']:
+                        print(f"\n推荐操作: {result['final_decision']['action']}")
+                        
+                        if result['llm_analysis']:
+                            print(f"分析: {result['llm_analysis']['analysis']}")
+                            print(f"风险: {result['llm_analysis']['risk_assessment']}")
+                            print(f"理由: {result['llm_analysis']['reason']}")
+                        
+                        simulate = input("模拟执行? (y/n): ").strip().lower()
+                        if simulate == 'y':
+                            trader.simulate_trade(result['final_decision']['action'], close)
+                    
+                except Exception as e:
+                    print(f"错误: {e}")
+            
+            elif cmd == 'load_data':
+                if len(parts) < 2:
+                    print("用法: load_data <csv_file>")
+                    continue
+                
+                try:
+                    data = trader.data_loader.load_csv_file(parts[1])
+                    trader.load_historical_data(data)
+                    print(f"成功加载 {len(data)} 根K线数据")
+                except Exception as e:
+                    print(f"加载失败: {e}")
+            
+            elif cmd == 'portfolio':
+                print(f"\n投资组合状态:")
+                print(f"  余额: ${trader.portfolio_info['balance']:.2f}")
+                print(f"  持仓: {trader.portfolio_info['shares_held']} 股")
+                print(f"  平均成本: ${trader.portfolio_info['avg_cost']:.2f}")
+                if len(trader.recent_actions) > 0:
+                    print(f"  最近操作: {', '.join(trader.recent_actions[-5:])}")
+            
+            elif cmd == 'reset':
+                trader.reset_portfolio()
+                print("投资组合已重置")
+            
+            else:
+                print(f"未知命令: {cmd}，输入 'help' 查看可用命令")
         
-        print("实时K线分析器已停止")
+        except Exception as e:
+            print(f"错误: {e}")
 
 
-def main():
+def run_realtime_mode(config: Config, args) -> None:
+    from realtime_analyzer import RealtimeAnalyzer
+    
+    analyzer = RealtimeAnalyzer(
+        config=config,
+        bar_type=args.bar,
+        interval=args.interval
+    )
+    
+    use_llm = not args.no_llm
+    save_data = not args.no_save
+    simulate_trade = args.simulate
+    use_aligned_time = not getattr(args, 'no_align', False)
+    
+    analyzer.initialize_trader(
+        model_path=args.model_path,
+        use_llm=use_llm
+    )
+    
+    if args.once:
+        analyzer.run_once(
+            use_llm=use_llm,
+            save_data=save_data,
+            simulate_trade=simulate_trade,
+            use_aligned_time=use_aligned_time
+        )
+    else:
+        analyzer.start(
+            use_llm=use_llm,
+            save_data=save_data,
+            simulate_trade=simulate_trade,
+            use_aligned_time=use_aligned_time
+        )
+
+
+def parse_args():
     parser = argparse.ArgumentParser(description='AI股票交易系统 - 基于强化学习和LLM的K线分析')
     
     parser.add_argument('--mode', type=str, default='predict',
@@ -618,295 +651,24 @@ def main():
     parser.add_argument('--once', action='store_true', default=False,
                         help='仅运行一次，不进行定时循环 [仅realtime模式]')
     
-    args = parser.parse_args()
+    parser.add_argument('--no_align', action='store_true', default=False,
+                        help='禁用时间对齐（不延后10秒）[仅realtime模式]')
     
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
     config = Config()
     
-    if args.mode == 'realtime':
-        analyzer = RealtimeKlineAnalyzer(
-            config=config,
-            bar_type=args.bar,
-            interval=args.interval
-        )
-        
-        use_llm = not args.no_llm
-        save_data = not args.no_save
-        simulate_trade = args.simulate
-        
-        analyzer.initialize_trader(
-            model_path=args.model_path,
-            use_llm=use_llm
-        )
-        
-        if args.once:
-            analyzer.run_once(
-                use_llm=use_llm,
-                save_data=save_data,
-                simulate_trade=simulate_trade
-            )
-        else:
-            analyzer.start(
-                use_llm=use_llm,
-                save_data=save_data,
-                simulate_trade=simulate_trade
-            )
-        return
-    
-    trader = StockTrader(config)
-    
     if args.mode == 'train':
-        print(f"开始训练模式，回合数: {args.episodes}")
-        trader.train(episodes=args.episodes, verbose=args.verbose)
-    
+        run_train_mode(config, args)
     elif args.mode == 'predict':
-        print("预测模式")
-        
-        model_loaded = False
-        if args.model_path:
-            try:
-                trader.load_trained_model(args.model_path)
-                model_loaded = True
-            except Exception as e:
-                print(f"警告: 加载指定模型失败: {e}")
-                print("将尝试使用默认模型路径，或仅使用LLM分析")
-        elif os.path.exists(config.BEST_MODEL_PATH):
-            try:
-                trader.load_trained_model(config.BEST_MODEL_PATH)
-                model_loaded = True
-            except Exception as e:
-                print(f"警告: 加载默认模型失败: {e}")
-        else:
-            print("提示: 未找到预训练模型，将仅使用LLM分析和规则分析")
-            print("      可以先运行 `python main.py --mode train` 来训练模型")
-        
-        if not model_loaded:
-            print("\n建议:")
-            print("  1. 如需使用强化学习模型，请先运行: python main.py --mode train --episodes 1000")
-            print("  2. 当前将使用LLM分析和规则分析进行预测\n")
-        
-        if args.use_llm:
-            trader.initialize_analyzer()
-        
-        if args.kline_file:
-            print(f"加载K线文件: {args.kline_file}")
-            data = trader.data_loader.load_csv_file(args.kline_file)
-            trader.load_historical_data(data)
-            
-            print(f"已加载 {len(data)} 根K线，开始分析最后一根K线...")
-            
-            latest = data.iloc[-1]
-            result = trader.predict_single_kline(
-                time=str(latest['Time']),
-                open=latest['Open'],
-                high=latest['High'],
-                low=latest['Low'],
-                close=latest['Close'],
-                volume=latest['Volume'],
-                use_llm=args.use_llm
-            )
-            
-            print("\n" + "="*60)
-            print("预测结果")
-            print("="*60)
-            
-            if result['rl_prediction']:
-                print(f"\n强化学习预测:")
-                print(f"  推荐操作: {result['rl_prediction']['action']}")
-                print(f"  Q值: {result['rl_prediction']['q_values']}")
-            
-            if result['llm_analysis']:
-                print(f"\nLLM分析结果:")
-                print(f"  技术分析: {result['llm_analysis']['analysis']}")
-                print(f"  风险评估: {result['llm_analysis']['risk_assessment']}")
-                print(f"  推荐操作: {result['llm_analysis']['recommended_action']}")
-                print(f"  置信度: {result['llm_analysis']['confidence']:.2f}")
-            
-            if result['final_decision']:
-                print(f"\n{'='*60}")
-                print(f"最终决策: {result['final_decision']['action']}")
-                print(f"{'='*60}")
-                
-                if 'combination_info' in result['final_decision']:
-                    print(result['final_decision']['combination_info']['combination_reason'])
-        
-        else:
-            print("\n请输入实时K线数据进行预测:")
-            print("格式: time,open,high,low,close,volume")
-            print("例如: 2024-01-15 10:30:00,150.50,152.00,149.80,151.20,10000000")
-            print("输入 'quit' 退出")
-            
-            while True:
-                try:
-                    user_input = input("\n输入K线数据: ").strip()
-                    
-                    if user_input.lower() == 'quit':
-                        break
-                    
-                    parts = user_input.split(',')
-                    if len(parts) != 6:
-                        print("错误: 请输入6个字段: time,open,high,low,close,volume")
-                        continue
-                    
-                    time = parts[0].strip()
-                    open_price = float(parts[1].strip())
-                    high = float(parts[2].strip())
-                    low = float(parts[3].strip())
-                    close = float(parts[4].strip())
-                    volume = float(parts[5].strip())
-                    
-                    result = trader.predict_single_kline(
-                        time=time,
-                        open=open_price,
-                        high=high,
-                        low=low,
-                        close=close,
-                        volume=volume,
-                        use_llm=args.use_llm
-                    )
-                    
-                    if result['final_decision']:
-                        print(f"\n推荐操作: {result['final_decision']['action']}")
-                        
-                        if result['llm_analysis']:
-                            print(f"分析: {result['llm_analysis']['analysis']}")
-                            print(f"理由: {result['llm_analysis']['reason']}")
-                        
-                        simulate = input("是否模拟执行此操作? (y/n): ").strip().lower()
-                        if simulate == 'y':
-                            trader.simulate_trade(result['final_decision']['action'], close)
-                    
-                except Exception as e:
-                    print(f"错误: {e}")
-    
+        run_predict_mode(config, args)
     elif args.mode == 'interactive':
-        print("="*60)
-        print("交互模式")
-        print("="*60)
-        print("可用命令:")
-        print("  train - 训练模型")
-        print("  load [path] - 加载模型")
-        print("  kline [data] - 输入单根K线数据进行预测")
-        print("  load_data [file] - 从CSV文件加载历史数据")
-        print("  portfolio - 显示当前投资组合状态")
-        print("  reset - 重置投资组合")
-        print("  help - 显示帮助信息")
-        print("  quit - 退出程序")
-        print("="*60)
-        
-        while True:
-            try:
-                command = input("\nAI Trader > ").strip()
-                
-                if not command:
-                    continue
-                
-                parts = command.split()
-                cmd = parts[0].lower()
-                
-                if cmd == 'quit':
-                    print("再见!")
-                    break
-                
-                elif cmd == 'help':
-                    print("""
-命令说明:
-  train [episodes] - 训练模型，可选指定回合数（默认1000）
-  load [path] - 从指定路径加载模型
-  kline time,open,high,low,close,volume - 输入K线数据进行预测
-  load_data [csv_file] - 从CSV文件加载历史K线数据
-  portfolio - 显示当前投资组合状态
-  reset - 重置投资组合
-  quit - 退出程序
-                    """)
-                
-                elif cmd == 'train':
-                    episodes = int(parts[1]) if len(parts) > 1 else 1000
-                    print(f"开始训练，回合数: {episodes}")
-                    trader.train(episodes=episodes)
-                
-                elif cmd == 'load':
-                    if len(parts) < 2:
-                        if os.path.exists(config.BEST_MODEL_PATH):
-                            trader.load_trained_model(config.BEST_MODEL_PATH)
-                        else:
-                            print("请指定模型路径: load <model_path>")
-                    else:
-                        trader.load_trained_model(parts[1])
-                
-                elif cmd == 'kline':
-                    if len(parts) < 2:
-                        print("用法: kline time,open,high,low,close,volume")
-                        continue
-                    
-                    kline_data = ' '.join(parts[1:])
-                    data_parts = kline_data.split(',')
-                    
-                    if len(data_parts) != 6:
-                        print("错误: 请输入6个字段: time,open,high,low,close,volume")
-                        continue
-                    
-                    try:
-                        time = data_parts[0].strip()
-                        open_price = float(data_parts[1].strip())
-                        high = float(data_parts[2].strip())
-                        low = float(data_parts[3].strip())
-                        close = float(data_parts[4].strip())
-                        volume = float(data_parts[5].strip())
-                        
-                        result = trader.predict_single_kline(
-                            time=time,
-                            open=open_price,
-                            high=high,
-                            low=low,
-                            close=close,
-                            volume=volume,
-                            use_llm=args.use_llm
-                        )
-                        
-                        if result['final_decision']:
-                            print(f"\n推荐操作: {result['final_decision']['action']}")
-                            
-                            if result['llm_analysis']:
-                                print(f"分析: {result['llm_analysis']['analysis']}")
-                                print(f"风险: {result['llm_analysis']['risk_assessment']}")
-                                print(f"理由: {result['llm_analysis']['reason']}")
-                            
-                            simulate = input("模拟执行? (y/n): ").strip().lower()
-                            if simulate == 'y':
-                                trader.simulate_trade(result['final_decision']['action'], close)
-                        
-                    except Exception as e:
-                        print(f"错误: {e}")
-                
-                elif cmd == 'load_data':
-                    if len(parts) < 2:
-                        print("用法: load_data <csv_file>")
-                        continue
-                    
-                    try:
-                        data = trader.data_loader.load_csv_file(parts[1])
-                        trader.load_historical_data(data)
-                        print(f"成功加载 {len(data)} 根K线数据")
-                    except Exception as e:
-                        print(f"加载失败: {e}")
-                
-                elif cmd == 'portfolio':
-                    print(f"\n投资组合状态:")
-                    print(f"  余额: ${trader.portfolio_info['balance']:.2f}")
-                    print(f"  持仓: {trader.portfolio_info['shares_held']} 股")
-                    print(f"  平均成本: ${trader.portfolio_info['avg_cost']:.2f}")
-                    if len(trader.recent_actions) > 0:
-                        print(f"  最近操作: {', '.join(trader.recent_actions[-5:])}")
-                
-                elif cmd == 'reset':
-                    trader.reset_portfolio()
-                    print("投资组合已重置")
-                
-                else:
-                    print(f"未知命令: {cmd}，输入 'help' 查看可用命令")
-            
-            except Exception as e:
-                print(f"错误: {e}")
+        run_interactive_mode(config, args)
+    elif args.mode == 'realtime':
+        run_realtime_mode(config, args)
 
 
 if __name__ == '__main__':
