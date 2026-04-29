@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Dict, List, Optional
 from config import Config
 from stock_trader import StockTrader
+from feishu_notifier import FeishuNotifier
 
 
 OKX_DELAY_SECONDS = 10
@@ -153,8 +154,10 @@ class RealtimeAnalyzer:
         self.trader: Optional[StockTrader] = None
         self.running = False
         self.last_kline_time: Optional[int] = None
+        self.last_final_decision: Optional[str] = None
         
         self.fetcher = OKXKlineFetcher(self.config)
+        self.feishu_notifier = FeishuNotifier()
     
     def initialize_trader(self, model_path: str = None, use_llm: bool = True):
         print("="*60)
