@@ -31,9 +31,9 @@ class FeishuNotifier:
             timeout: 请求超时时间（秒），默认从配置读取
             enabled: 是否启用通知，默认从配置读取
         """
-        self.webhook_url = webhook_url or Config.FEISHU_WEBHOOK_URL
-        self.secret = secret or Config.FEISHU_SECRET
-        self.timeout = timeout or Config.FEISHU_TIMEOUT
+        self.webhook_url = webhook_url if webhook_url is not None else Config.FEISHU_WEBHOOK_URL
+        self.secret = secret if secret is not None else Config.FEISHU_SECRET
+        self.timeout = timeout if timeout is not None else Config.FEISHU_TIMEOUT
         
         if enabled is not None:
             self.enabled = enabled
