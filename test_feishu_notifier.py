@@ -329,6 +329,122 @@ class TestConfigIntegration(unittest.TestCase):
         self.assertEqual(call_args[0][0], "https://configured-url.example.com")
 
 
+class TestFeishuRealSendIntegration(unittest.TestCase):
+    """飞书真实发送集成测试
+    
+    注意：这些测试会发送真实消息到飞书群
+    需要满足以下条件才会执行：
+    1. 配置了 FEISHU_WEBHOOK_URL 环境变量
+    2. 设置了 FEISHU_TEST_REAL_SEND=true 环境变量
+    
+    使用方式：
+    # Windows
+    set FEISHU_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/your_token
+    set FEISHU_ENABLED=true
+    set FEISHU_TEST_REAL_SEND=true
+    python test_feishu_notifier.py
+    
+    # Linux/Mac
+    export FEISHU_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/your_token
+    export FEISHU_ENABLED=true
+    export FEISHU_TEST_REAL_SEND=true
+    python test_feishu_notifier.py
+    """
+    
+    @classmethod
+    def setUpClass(cls):
+        """测试类初始化"""
+        import os
+        cls.should_run_real_test = (
+            os.getenv('FEISHU_TEST_REAL_SEND', 'false').lower() == 'true'
+            and Config.FEISHU_WEBHOOK_URL
+        )
+    
+    def setUp(self):
+        """每个测试前的准备"""
+        import feishu_notifier
+        feishu_notifier._default_notifier = None
+    
+    def tearDown(self):
+        """每个测试后的清理"""
+        import feishu_notifier
+        feishu_notifier._default_notifier = None
+    
+    def _skip_if_not_real_test(self):
+        """如果不满足真实测试条件则跳过"""
+        if not self.should_run_real_test:
+            self.skipTest(
+                "跳过真实发送测试。如需执行，请设置："
+                "FEISHU_WEBHOOK_URL 和 FEISHU_TEST_REAL_SEND=true"
+            )
+    
+    def test_real_send_text_message(self):
+        """真实发送文本消息到飞书"""
+        self._skip_if_not_real_test()
+        
+        test_message = (
+            "【测试消息】这是一条来自 AI-Trader-KLine 的测试消息。\n"
+            f"发送时间: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+            "测试目的：验证飞书自定义机器人消息发送功能是否正常。"
+        )
+        
+        print(f"\n{'='*60}")
+        print(f"准备发送真实消息到飞书...")
+        print(f"Webhook URL: {Config.FEISHU_WEBHOOK_URL[:50]}...")
+        print(f"消息内容: {test_message[:100]}...")
+        print(f"{'='*60}\n")
+        
+        result = send(test_message)
+        
+        print(f"\n发送结果:")
+        print(f"  success: {result['success']}")
+        print(f"  message: {result['message']}")
+        if result['response']:
+            print(f"  response: {result['response']}")
+        if result['error']:
+            print(f"  error: {result['error']}")
+        
+        self.assertTrue(
+            result['success'],
+            f"真实消息发送失败: {result.get('error', result['message'])}"
+        )
+    
+    def test_real_send_with_signature(self):
+        """真实发送带签名验证的消息到飞书"""
+        self._skip_if_not_real_test()
+        
+        if not Config.FEISHU_SECRET:
+            self.skipTest("未配置 FEISHU_SECRET，跳过签名验证测试")
+        
+        test_message = (
+            "【测试消息-签名验证】这是一条带签名验证的测试消息。\n"
+            f"发送时间: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+            "测试目的：验证带签名的消息发送功能是否正常。"
+        )
+        
+        notifier = FeishuNotifier(enabled=True)
+        
+        print(f"\n{'='*60}")
+        print(f"准备发送带签名验证的真实消息到飞书...")
+        print(f"已配置 secret: {'是' if notifier.secret else '否'}")
+        print(f"{'='*60}\n")
+        
+        result = notifier.send(test_message)
+        
+        print(f"\n发送结果:")
+        print(f"  success: {result['success']}")
+        print(f"  message: {result['message']}")
+        if result['response']:
+            print(f"  response: {result['response']}")
+        if result['error']:
+            print(f"  error: {result['error']}")
+        
+        self.assertTrue(
+            result['success'],
+            f"带签名的消息发送失败: {result.get('error', result['message'])}"
+        )
+
+
 def run_tests():
     """运行所有测试"""
     loader = unittest.TestLoader()
@@ -337,6 +453,7 @@ def run_tests():
     suite.addTests(loader.loadTestsFromTestCase(TestFeishuNotifier))
     suite.addTests(loader.loadTestsFromTestCase(TestGlobalFunctions))
     suite.addTests(loader.loadTestsFromTestCase(TestConfigIntegration))
+    suite.addTests(loader.loadTestsFromTestCase(TestFeishuRealSendIntegration))
     
     runner = unittest.TextTestRunner(verbosity=2)
     runner.run(suite)
