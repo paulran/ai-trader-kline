@@ -6,6 +6,7 @@ from config import Config
 from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig
 import json
 import requests
+from logger import logger
 
 
 class DeepSeekAnalyzer:
@@ -15,17 +16,17 @@ class DeepSeekAnalyzer:
         self.model = None
         
         if self.config.USE_DEEPSEEK_API and self.config.DEEPSEEK_API_KEY:
-            print("使用DeepSeek API模式")
+            logger.info("使用DeepSeek API模式")
             self.use_api = True
         else:
-            print("使用本地模型模式（需要更多资源）")
+            logger.info("使用本地模型模式（需要更多资源）")
             self.use_api = False
             self._load_local_model()
     
     def _load_local_model(self):
         try:
-            print(f"正在加载DeepSeek模型: {self.config.MODEL_NAME}")
-            print("注意: 加载大模型可能需要较长时间和较多内存")
+            logger.info(f"正在加载DeepSeek模型: {self.config.MODEL_NAME}")
+            logger.info("注意: 加载大模型可能需要较长时间和较多内存")
             
             model_config = AutoConfig.from_pretrained(self.config.MODEL_NAME)
             
@@ -50,11 +51,11 @@ class DeepSeekAnalyzer:
                 self.tokenizer.pad_token = self.tokenizer.eos_token
             
             self.model.eval()
-            print("DeepSeek模型加载完成")
+            logger.info("DeepSeek模型加载完成")
             
         except Exception as e:
-            print(f"加载DeepSeek本地模型失败: {e}")
-            print("将使用基于规则的分析作为替代方案")
+            logger.error(f"加载DeepSeek本地模型失败: {e}")
+            logger.warning("将使用基于规则的分析作为替代方案")
             self.model = None
             self.tokenizer = None
     
@@ -88,7 +89,7 @@ class DeepSeekAnalyzer:
             result = response.json()
             return result['choices'][0]['message']['content']
         except Exception as e:
-            print(f"DeepSeek API调用失败: {e}")
+            logger.error(f"DeepSeek API调用失败: {e}")
             return f"API调用错误: {str(e)}"
     
     def _generate_prompt_from_kline(self, kline_data: pd.DataFrame, 
@@ -231,7 +232,7 @@ MACD状态: {'金叉' if macd > signal else '死叉'}
             return self._parse_llm_response(response)
             
         except Exception as e:
-            print(f"本地模型推理失败: {e}")
+            logger.error(f"本地模型推理失败: {e}")
             return {
                 "analysis": "模型推理失败，使用规则分析",
                 "risk_assessment": "未知",
