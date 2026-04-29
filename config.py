@@ -63,6 +63,12 @@ class Config:
     FEISHU_ENABLED = os.getenv("FEISHU_ENABLED", "false").lower() == "true"
     FEISHU_TIMEOUT = int(os.getenv("FEISHU_TIMEOUT", "10"))
     
+    # 日志配置
+    LOG_PATH = os.getenv("LOG_PATH", "./logs")
+    LOG_FILENAME = os.getenv("LOG_FILENAME", "ai_trader.log")
+    LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))  # 10MB
+    LOG_BACKUP_COUNT = int(os.getenv("LOG_BACKUP_COUNT", "5"))  # 最多5个备份文件
+    
     @classmethod
     def create_directories(cls):
         os.makedirs(cls.DATA_PATH, exist_ok=True)
@@ -70,3 +76,4 @@ class Config:
         os.makedirs(cls.TEST_DATA_PATH, exist_ok=True)
         os.makedirs(cls.CHECKPOINT_PATH, exist_ok=True)
         os.makedirs(cls.REALTIME_DATA_PATH, exist_ok=True)
+        os.makedirs(cls.LOG_PATH, exist_ok=True)

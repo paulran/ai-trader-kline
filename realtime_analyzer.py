@@ -8,6 +8,7 @@ from typing import Dict, List, Optional
 from config import Config
 from stock_trader import StockTrader
 from feishu_notifier import FeishuNotifier, get_notifier
+from logger import logger
 
 
 OKX_DELAY_SECONDS = 10
@@ -51,8 +52,8 @@ def wait_for_aligned_time(bar_type: str) -> None:
     wait_seconds = (target_time - now).total_seconds()
     
     if wait_seconds > 0:
-        print(f"等待到下一个对齐时间点: {target_time.strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"还需等待 {wait_seconds:.1f} 秒...")
+        logger.info(f"等待到下一个对齐时间点: {target_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        logger.info(f"还需等待 {wait_seconds:.1f} 秒...")
         time.sleep(wait_seconds)
 
 
@@ -81,25 +82,25 @@ class OKXKlineFetcher:
             data = response.json()
             
             if data.get("code") != "0":
-                print(f"API请求失败 | code: {data.get('code')}, msg: {data.get('msg')}")
+                logger.error(f"API请求失败 | code: {data.get('code')}, msg: {data.get('msg')}")
                 return None
             
             candle_data = data.get("data", [])
             if not candle_data:
-                print("未获取到K线数据")
+                logger.warning("未获取到K线数据")
                 return None
             
             if remove_last and len(candle_data) > 1:
                 candle_data = candle_data[1:]
-                print(f"已移除最后一条可能不完整的数据，剩余 {len(candle_data)} 条")
+                logger.info(f"已移除最后一条可能不完整的数据，剩余 {len(candle_data)} 条")
             
             return candle_data
             
         except requests.exceptions.RequestException as e:
-            print(f"网络错误: {str(e)}")
+            logger.error(f"网络错误: {str(e)}")
             return None
         except Exception as e:
-            print(f"意外错误: {str(e)}")
+            logger.error(f"意外错误: {str(e)}")
             return None
     
     def save_to_csv(self, candle_data: List[List], bar: str) -> str:
@@ -116,7 +117,7 @@ class OKXKlineFetcher:
             for row in candle_data:
                 writer.writerow(row[:6])
         
-        print(f"数据已保存: {file_path}")
+        logger.info(f"数据已保存: {file_path}")
         return file_path
     
     def to_dataframe(self, candle_data: List[List]) -> pd.DataFrame:
@@ -245,20 +246,20 @@ class RealtimeAnalyzer:
             send_result = self.feishu_notifier.send(message)
             
             if send_result.get('success'):
-                print("飞书通知发送成功")
+                logger.info("飞书通知发送成功")
                 return True
             else:
-                print(f"飞书通知发送失败: {send_result.get('error', '未知错误')}")
+                logger.error(f"飞书通知发送失败: {send_result.get('error', '未知错误')}")
                 return False
                 
         except Exception as e:
-            print(f"发送飞书通知时发生错误: {str(e)}")
+            logger.error(f"发送飞书通知时发生错误: {str(e)}")
             return False
     
     def initialize_trader(self, model_path: str = None, use_llm: bool = True):
-        print("="*60)
-        print("初始化 AI Trader...")
-        print("="*60)
+        logger.info("="*60)
+        logger.info("初始化 AI Trader...")
+        logger.info("="*60)
         
         self.trader = StockTrader(self.config)
         
@@ -268,27 +269,27 @@ class RealtimeAnalyzer:
                 self.trader.load_trained_model(model_path)
                 model_loaded = True
             except Exception as e:
-                print(f"警告: 加载指定模型失败: {e}")
-                print("将尝试使用默认模型路径，或仅使用LLM分析")
+                logger.warning(f"警告: 加载指定模型失败: {e}")
+                logger.warning("将尝试使用默认模型路径，或仅使用LLM分析")
         elif os.path.exists(self.config.BEST_MODEL_PATH):
             try:
                 self.trader.load_trained_model(self.config.BEST_MODEL_PATH)
                 model_loaded = True
             except Exception as e:
-                print(f"警告: 加载默认模型失败: {e}")
+                logger.warning(f"警告: 加载默认模型失败: {e}")
         else:
-            print("提示: 未找到预训练模型，将仅使用LLM分析和规则分析")
+            logger.info("提示: 未找到预训练模型，将仅使用LLM分析和规则分析")
         
         if not model_loaded:
-            print("\n建议:")
-            print("  1. 如需使用强化学习模型，请先运行: python main.py --mode train")
-            print("  2. 当前将使用LLM分析和规则分析进行预测\n")
+            logger.info("\n建议:")
+            logger.info("  1. 如需使用强化学习模型，请先运行: python main.py --mode train")
+            logger.info("  2. 当前将使用LLM分析和规则分析进行预测\n")
         
         if use_llm:
             self.trader.initialize_analyzer()
         
-        print("AI Trader 初始化完成")
-        print("="*60)
+        logger.info("AI Trader 初始化完成")
+        logger.info("="*60)
     
     def analyze_candles(self, candle_data: List[List], use_llm: bool = True) -> Optional[Dict]:
         if self.trader is None:
