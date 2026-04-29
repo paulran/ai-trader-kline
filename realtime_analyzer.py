@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Dict, List, Optional
 from config import Config
 from stock_trader import StockTrader
+from feishu_notifier import FeishuNotifier, get_notifier
 
 
 OKX_DELAY_SECONDS = 10
@@ -153,8 +154,106 @@ class RealtimeAnalyzer:
         self.trader: Optional[StockTrader] = None
         self.running = False
         self.last_kline_time: Optional[int] = None
+        self.last_final_decision: Optional[str] = None
+        self.feishu_notifier: Optional[FeishuNotifier] = None
         
         self.fetcher = OKXKlineFetcher(self.config)
+        self._init_feishu_notifier()
+    
+    def _init_feishu_notifier(self):
+        if self.feishu_notifier is None:
+            self.feishu_notifier = get_notifier()
+    
+    def _should_send_notification(self, current_decision: str) -> bool:
+        if self.last_final_decision is None:
+            return False
+        
+        if self.last_final_decision == current_decision:
+            return False
+        
+        if current_decision == "Buy":
+            return self.last_final_decision in ["Hold", "Sell"]
+        elif current_decision == "Sell":
+            return self.last_final_decision in ["Hold", "Buy"]
+        
+        return False
+    
+    def _format_result_for_feishu(self, result: Dict) -> str:
+        lines = []
+        
+        lines.append("【交易信号 - 决策变化通知】")
+        lines.append("-" * 40)
+        
+        kline_info = result.get('kline_info', {})
+        if kline_info:
+            lines.append(f"时间: {kline_info.get('time', 'N/A')}")
+            lines.append(f"交易对: {self.config.OKX_INST_ID}")
+            lines.append(f"K线周期: {self.bar}")
+            lines.append(f"开盘: {kline_info.get('open', 0):.2f}")
+            lines.append(f"最高: {kline_info.get('high', 0):.2f}")
+            lines.append(f"最低: {kline_info.get('low', 0):.2f}")
+            lines.append(f"收盘: {kline_info.get('close', 0):.2f}")
+            lines.append(f"成交量: {kline_info.get('volume', 0):,}")
+        
+        lines.append("-" * 40)
+        
+        rl_pred = result.get('rl_prediction')
+        if rl_pred:
+            lines.append(f"强化学习推荐: {rl_pred.get('action', 'N/A')}")
+            q_values = rl_pred.get('q_values', [])
+            if q_values:
+                lines.append(f"  Q值: {[f'{q:.4f}' for q in q_values]}")
+        
+        llm_analysis = result.get('llm_analysis')
+        if llm_analysis:
+            lines.append(f"LLM推荐: {llm_analysis.get('recommended_action', 'N/A')}")
+            lines.append(f"  置信度: {llm_analysis.get('confidence', 0):.2f}")
+            analysis = llm_analysis.get('analysis', '')
+            if analysis and len(analysis) > 100:
+                analysis = analysis[:100] + "..."
+            if analysis:
+                lines.append(f"  分析: {analysis}")
+        
+        lines.append("-" * 40)
+        
+        final_decision = result.get('final_decision', {})
+        if final_decision:
+            action = final_decision.get('action', 'N/A')
+            lines.append(f"【最终决策】: {action}")
+            lines.append(f"前一次决策: {self.last_final_decision or '无'}")
+            
+            combination_info = final_decision.get('combination_info', {})
+            if combination_info:
+                combination_reason = combination_info.get('combination_reason', '')
+                if combination_reason:
+                    lines.append(f"决策原因: {combination_reason}")
+        
+        lines.append("-" * 40)
+        lines.append(f"通知时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        
+        return "\n".join(lines)
+    
+    def _send_feishu_notification(self, result: Dict) -> bool:
+        if self.feishu_notifier is None:
+            return False
+        
+        if not self.feishu_notifier.enabled:
+            return False
+        
+        try:
+            message = self._format_result_for_feishu(result)
+            send_result = self.feishu_notifier.send(message)
+            
+            if send_result.get('success'):
+                print("飞书通知发送成功")
+                return True
+            else:
+                print(f"飞书通知发送失败: {send_result.get('error', '未知错误')}")
+                return False
+                
+        except Exception as e:
+            print(f"发送飞书通知时发生错误: {str(e)}")
+            return False
     
     def initialize_trader(self, model_path: str = None, use_llm: bool = True):
         print("="*60)
@@ -293,6 +392,17 @@ class RealtimeAnalyzer:
         result = self.analyze_candles(candle_data, use_llm)
         if result:
             self.print_result(result, simulate_trade)
+            
+            final_decision = result.get('final_decision')
+            if final_decision:
+                current_action = final_decision.get('action')
+                if current_action:
+                    if self._should_send_notification(current_action):
+                        print(f"\n检测到决策变化: {self.last_final_decision} -> {current_action}")
+                        print("准备发送飞书通知...")
+                        self._send_feishu_notification(result)
+                    
+                    self.last_final_decision = current_action
         
         return result
     
