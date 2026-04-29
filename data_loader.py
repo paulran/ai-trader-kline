@@ -4,6 +4,7 @@ from typing import Dict, List, Optional, Tuple
 from pathlib import Path
 from datetime import datetime
 from config import Config
+from logger import logger
 
 class DataLoader:
     def __init__(self, config: Config = None):
@@ -60,10 +61,10 @@ class DataLoader:
                 df = self.load_csv_file(str(file_path))
                 data_frames.append(df)
             except Exception as e:
-                print(f"警告: 无法加载文件 {file_path}: {e}")
+                logger.warning(f"警告: 无法加载文件 {file_path}: {e}")
         
         if not data_frames:
-            print("警告: 训练数据目录中没有找到有效的CSV文件，将生成示例数据")
+            logger.warning("警告: 训练数据目录中没有找到有效的CSV文件，将生成示例数据")
             sample_df = self.generate_sample_data()
             data_frames.append(sample_df)
         
@@ -78,10 +79,10 @@ class DataLoader:
                 df = self.load_csv_file(str(file_path))
                 data_frames.append(df)
             except Exception as e:
-                print(f"警告: 无法加载文件 {file_path}: {e}")
+                logger.warning(f"警告: 无法加载文件 {file_path}: {e}")
         
         if not data_frames:
-            print("警告: 测试数据目录中没有找到有效的CSV文件，将生成示例数据")
+            logger.warning("警告: 测试数据目录中没有找到有效的CSV文件，将生成示例数据")
             sample_df = self.generate_sample_data()
             data_frames.append(sample_df)
         

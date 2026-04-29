@@ -8,6 +8,7 @@ from data_loader import DataLoader
 from trading_env import TradingEnv
 from dqn_model import DQNAgent
 from deepseek_analyzer import DeepSeekAnalyzer
+from logger import logger
 
 
 class StockTrader:
@@ -30,9 +31,9 @@ class StockTrader:
     
     def train(self, episodes: int = None, verbose: bool = True):
         if verbose:
-            print("="*60)
-            print("开始训练强化学习模型")
-            print("="*60)
+            logger.info("="*60)
+            logger.info("开始训练强化学习模型")
+            logger.info("="*60)
         
         episodes = episodes or self.config.RL_TRAIN_EPISODES
         
@@ -90,17 +91,17 @@ class StockTrader:
             self.agent.save_model(self.config.LATEST_MODEL_PATH)
             
             if verbose and (episode + 1) % max(1, episodes // 10) == 0:
-                print(f"回合 {episode+1}/{episodes} - "
+                logger.info(f"回合 {episode+1}/{episodes} - "
                       f"总奖励: {total_reward:.2f}, "
                       f"收益率: {total_return:.2f}%, "
                       f"交易次数: {episode_trades}, "
                       f"Epsilon: {self.agent.epsilon:.4f}")
         
         if verbose:
-            print("="*60)
-            print("训练完成")
-            print(f"最佳收益率: {best_total_return:.2f}%")
-            print("="*60)
+            logger.info("="*60)
+            logger.info("训练完成")
+            logger.info(f"最佳收益率: {best_total_return:.2f}%")
+            logger.info("="*60)
         
         return best_total_return
     
@@ -126,15 +127,15 @@ class StockTrader:
         try:
             self.agent.load_model(model_path)
             self.agent.epsilon = self.config.RL_EPSILON_END
-            print("模型加载完成，准备进行预测")
+            logger.info("模型加载完成，准备进行预测")
         except Exception as e:
-            print(f"警告: 模型加载失败: {e}")
-            print("将禁用强化学习模型，仅使用LLM分析和规则分析")
+            logger.warning(f"警告: 模型加载失败: {e}")
+            logger.warning("将禁用强化学习模型，仅使用LLM分析和规则分析")
             self.agent = None
     
     def initialize_analyzer(self):
         if self.analyzer is None:
-            print("初始化DeepSeek分析器...")
+            logger.info("初始化DeepSeek分析器...")
             self.analyzer = DeepSeekAnalyzer(self.config)
     
     def predict_single_kline(self, time: str, open: float, high: float, 
@@ -150,8 +151,8 @@ class StockTrader:
             self.historical_klines = pd.concat([self.historical_klines, new_kline], ignore_index=True)
         
         if len(self.historical_klines) < self.config.WINDOW_SIZE:
-            print(f"警告: 历史数据不足{self.config.WINDOW_SIZE}根K线，当前: {len(self.historical_klines)}根")
-            print("建议继续添加更多历史数据以获得更准确的预测")
+            logger.warning(f"警告: 历史数据不足{self.config.WINDOW_SIZE}根K线，当前: {len(self.historical_klines)}根")
+            logger.warning("建议继续添加更多历史数据以获得更准确的预测")
         
         if len(self.historical_klines) >= 5:
             self.historical_klines = self.data_loader._add_technical_indicators(self.historical_klines)
@@ -309,4 +310,4 @@ class StockTrader:
         self.historical_klines = data.copy()
         if len(self.historical_klines) >= 5:
             self.historical_klines = self.data_loader._add_technical_indicators(self.historical_klines)
-        print(f"已加载 {len(self.historical_klines)} 根历史K线数据")
+        logger.info(f"已加载 {len(self.historical_klines)} 根历史K线数据")
