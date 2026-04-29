@@ -34,15 +34,19 @@ class FeishuNotifier:
         self.webhook_url = webhook_url or Config.FEISHU_WEBHOOK_URL
         self.secret = secret or Config.FEISHU_SECRET
         self.timeout = timeout or Config.FEISHU_TIMEOUT
-        self.enabled = enabled if enabled is not None else Config.FEISHU_ENABLED
         
-        if self.secret:
-            self.enabled = True
+        if enabled is not None:
+            self.enabled = enabled
+        else:
+            self.enabled = Config.FEISHU_ENABLED
     
     def _generate_sign(self, timestamp: int, secret: str) -> str:
         """生成飞书签名
         
-        签名算法：HmacSHA256 算法，使用密钥对 时间戳 + "\n" + 密钥 进行签名，然后进行 Base64 编码。
+        签名算法（根据飞书官方文档）：
+        1. 把 timestamp + "\n" + 密钥 当做签名字符串 string_to_sign
+        2. 使用 HmacSHA256 算法，以 string_to_sign 作为密钥，签名空字节
+        3. 对签名结果进行 Base64 编码
         
         Args:
             timestamp: 当前时间戳（秒）
@@ -53,8 +57,8 @@ class FeishuNotifier:
         """
         string_to_sign = f"{timestamp}\n{secret}"
         hmac_obj = hmac.new(
-            secret.encode('utf-8'),
             string_to_sign.encode('utf-8'),
+            b'',
             hashlib.sha256
         )
         sign = base64.b64encode(hmac_obj.digest()).decode('utf-8')
@@ -117,7 +121,10 @@ class FeishuNotifier:
             response_data = response.json()
             result['response'] = response_data
             
-            if response.status_code == 200 and response_data.get('StatusCode') == 0:
+            status_code = response_data.get('StatusCode')
+            code = response_data.get('code')
+            
+            if response.status_code == 200 and (status_code == 0 or code == 0):
                 result['success'] = True
                 result['message'] = '消息发送成功'
             else:
