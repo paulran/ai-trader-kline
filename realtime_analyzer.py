@@ -171,10 +171,10 @@ class RealtimeAnalyzer:
         if self.last_final_decision == current_decision:
             return False
         
-        if current_decision == "Buy":
-            return self.last_final_decision in ["Hold", "Sell"]
-        elif current_decision == "Sell":
-            return self.last_final_decision in ["Hold", "Buy"]
+        if current_decision == "Buy" and self.last_final_decision == "Sell":
+            return True
+        elif current_decision == "Sell" and self.last_final_decision == "Buy":
+            return True
         
         return False
     
@@ -402,7 +402,8 @@ class RealtimeAnalyzer:
                         print("准备发送飞书通知...")
                         self._send_feishu_notification(result)
                     
-                    self.last_final_decision = current_action
+                    if current_action in ["Buy", "Sell"]:
+                        self.last_final_decision = current_action
         
         return result
     
