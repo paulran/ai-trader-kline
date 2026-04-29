@@ -57,6 +57,12 @@ class Config:
     REALTIME_USE_LLM = os.getenv("REALTIME_USE_LLM", "true").lower() == "true"
     REALTIME_SIMULATE_TRADE = os.getenv("REALTIME_SIMULATE_TRADE", "false").lower() == "true"
     
+    # 飞书通知配置
+    FEISHU_WEBHOOK_URL = os.getenv("FEISHU_WEBHOOK_URL", "")
+    FEISHU_SECRET = os.getenv("FEISHU_SECRET", "")  # 可选：用于签名验证
+    FEISHU_ENABLED = os.getenv("FEISHU_ENABLED", "false").lower() == "true"
+    FEISHU_TIMEOUT = int(os.getenv("FEISHU_TIMEOUT", "10"))
+    
     @classmethod
     def create_directories(cls):
         os.makedirs(cls.DATA_PATH, exist_ok=True)
