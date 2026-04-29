@@ -7,6 +7,7 @@ import random
 from collections import deque
 from typing import Dict, List, Optional, Tuple
 from config import Config
+from logger import logger
 
 
 def _check_cuda_compatibility() -> bool:
@@ -14,11 +15,11 @@ def _check_cuda_compatibility() -> bool:
         if torch.cuda.is_available():
             cuda_version = torch.version.cuda
             driver_version = torch.cuda.get_device_capability()
-            print(f"CUDA版本: {cuda_version}")
-            print(f"设备能力: {driver_version}")
+            logger.info(f"CUDA版本: {cuda_version}")
+            logger.info(f"设备能力: {driver_version}")
             return True
     except Exception as e:
-        print(f"CUDA兼容性检查失败: {e}")
+        logger.warning(f"CUDA兼容性检查失败: {e}")
     return False
 
 class ReplayBuffer:
@@ -105,7 +106,7 @@ class DQNAgent:
         else:
             self.device = torch.device("cpu")
         
-        print(f"使用设备: {self.device}")
+        logger.info(f"使用设备: {self.device}")
         
         self.policy_net = DQNNetwork(self.state_shape, self.action_size, self.hidden_size).to(self.device)
         self.target_net = DQNNetwork(self.state_shape, self.action_size, self.hidden_size).to(self.device)
@@ -193,7 +194,7 @@ class DQNAgent:
         }
         
         torch.save(checkpoint, path)
-        print(f"模型已保存到: {path}")
+        logger.info(f"模型已保存到: {path}")
     
     def load_model(self, path: str):
         try:
@@ -206,7 +207,7 @@ class DQNAgent:
             except TypeError:
                 checkpoint = torch.load(path, map_location=self.device)
         except Exception as e:
-            print(f"加载模型时遇到问题，尝试使用安全加载方式: {e}")
+            logger.warning(f"加载模型时遇到问题，尝试使用安全加载方式: {e}")
             try:
                 import warnings
                 with warnings.catch_warnings():
@@ -225,4 +226,4 @@ class DQNAgent:
         best_reward_val = checkpoint.get('best_reward', -1e18)
         self.best_reward = float('-inf') if best_reward_val <= -1e18 else float(best_reward_val)
         
-        print(f"模型已从 {path} 加载")
+        logger.info(f"模型已从 {path} 加载")
