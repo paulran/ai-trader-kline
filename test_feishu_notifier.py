@@ -52,13 +52,17 @@ class TestFeishuNotifier(unittest.TestCase):
         self.assertEqual(notifier.timeout, custom_timeout)
         self.assertTrue(notifier.enabled)
     
-    def test_init_with_secret_enables_notifier(self):
-        """测试提供密钥时自动启用通知"""
-        notifier = FeishuNotifier(secret=self.test_secret)
-        self.assertTrue(notifier.enabled)
+    def test_init_with_explicit_enabled_false(self):
+        """测试明确指定 enabled=False 时，即使有 secret 也不启用"""
+        notifier = FeishuNotifier(
+            webhook_url=self.test_webhook_url,
+            secret=self.test_secret,
+            enabled=False
+        )
+        self.assertFalse(notifier.enabled)
     
     def test_generate_sign(self):
-        """测试签名生成"""
+        """测试签名生成（根据飞书官方文档）"""
         notifier = FeishuNotifier(secret=self.test_secret)
         timestamp = int(time.time())
         
@@ -66,8 +70,8 @@ class TestFeishuNotifier(unittest.TestCase):
         
         expected_string_to_sign = f"{timestamp}\n{self.test_secret}"
         expected_hmac = hmac.new(
-            self.test_secret.encode('utf-8'),
             expected_string_to_sign.encode('utf-8'),
+            b'',
             hashlib.sha256
         )
         expected_sign = base64.b64encode(expected_hmac.digest()).decode('utf-8')
@@ -127,7 +131,8 @@ class TestFeishuNotifier(unittest.TestCase):
         
         notifier = FeishuNotifier(
             webhook_url=self.test_webhook_url,
-            secret=self.test_secret
+            secret=self.test_secret,
+            enabled=True
         )
         
         result = notifier.send(self.test_msg)
@@ -154,7 +159,10 @@ class TestFeishuNotifier(unittest.TestCase):
     
     def test_send_no_webhook(self):
         """测试未配置 webhook 时发送消息"""
-        notifier = FeishuNotifier(enabled=True)
+        notifier = FeishuNotifier(
+            webhook_url="",
+            enabled=True
+        )
         
         result = notifier.send(self.test_msg)
         
