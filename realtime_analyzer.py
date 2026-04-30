@@ -149,7 +149,7 @@ class OKXKlineFetcher:
         
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         file_name = f"{self.config.OKX_INST_ID}_{bar}_{timestamp}.csv"
-        file_path = os.path.join(self.config.REALTIME_DATA_PATH, file_name)
+        file_path = os.path.join(self.config.DATA_PATH, file_name)
         
         with open(file_path, "w", newline="", encoding="utf-8-sig") as f:
             writer = csv.writer(f)
