@@ -104,7 +104,7 @@ class OKXKlineFetcher:
             "https": os.getenv("HTTPS_PROXY")
         }
         self.sqlite_store = SQLiteKlineStore(self.config)
-        self.exchange = self.config.OKX_INST_ID.split('-')[0] if '-' in self.config.OKX_INST_ID else self.config.OKX_INST_ID
+        self.exchange = self.config.EXCHANGE
     
     def fetch_candles(self, bar: str, remove_last: bool = True) -> Optional[List[List]]:
         params = {

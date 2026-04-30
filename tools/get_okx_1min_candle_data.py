@@ -86,7 +86,7 @@ def get_okx_1min_candle_data(inst_id: str = "BTC-USDT", inst_type: str = "SPOT")
             return
 
         sqlite_store = SQLiteKlineStore(config)
-        exchange = inst_id.split('-')[0] if '-' in inst_id else inst_id
+        exchange = config.EXCHANGE
         
         klines = []
         for row in candle_data:

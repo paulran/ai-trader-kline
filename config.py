@@ -43,6 +43,9 @@ class Config:
     BEST_MODEL_PATH = os.path.join(CHECKPOINT_PATH, "best_model.pt")
     LATEST_MODEL_PATH = os.path.join(CHECKPOINT_PATH, "latest_model.pt")
     
+    # 交易所配置
+    EXCHANGE = os.getenv("EXCHANGE", "OKX")  # 交易所名称，如: OKX, CFFEX, BINANCE 等
+    
     # OKX API配置
     OKX_API_URL = os.getenv("OKX_API_URL", "https://www.okx.com/api/v5/market/candles")
     OKX_INST_ID = os.getenv("OKX_INST_ID", "BTC-USDT")
