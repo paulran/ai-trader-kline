@@ -22,14 +22,17 @@ def parse_okx_candle_row(row: List, inst_type: str) -> List:
     - SPOT(币币/币币杠杆): Volume=vol(基础货币数量), Amount=volCcyQuote(计价货币成交额)
     - SWAP(衍生品合约): Volume=volCcy(币的数量, 因为vol是合约张数), Amount=volCcyQuote(计价货币成交额)
     
+    注意：OKX返回的ts是毫秒时间戳，这里会转换为秒数格式
+    
     Args:
         row: OKX返回的原始K线数据行
         inst_type: 交易类型，"SPOT" 或 "SWAP"
     
     Returns:
-        处理后的数据行: [time, open, high, low, close, volume, amount]
+        处理后的数据行: [time(秒数), open, high, low, close, volume, amount]
     """
-    ts = row[0]
+    ts_ms = row[0]
+    ts_s = str(int(int(ts_ms) / 1000))
     o = row[1]
     h = row[2]
     l = row[3]
@@ -45,7 +48,7 @@ def parse_okx_candle_row(row: List, inst_type: str) -> List:
     
     amount = vol_ccy_quote
     
-    return [ts, o, h, l, c, volume, amount]
+    return [ts_s, o, h, l, c, volume, amount]
 
 
 def get_next_aligned_time(bar_type: str) -> datetime:
@@ -353,8 +356,8 @@ class RealtimeAnalyzer:
             self.trader.load_historical_data(df)
         
         latest_row = df.iloc[-1]
-        time_ms = int(latest_row['Time'])
-        time_str = datetime.fromtimestamp(time_ms / 1000).strftime('%Y-%m-%d %H:%M:%S')
+        time_s = int(latest_row['Time'])
+        time_str = datetime.fromtimestamp(time_s).strftime('%Y-%m-%d %H:%M:%S')
         
         amount = latest_row.get('Amount', None)
         
