@@ -271,6 +271,7 @@ class StockTrader:
                     self.portfolio_info['balance'] -= total_cost
                     
                     print(f"模拟买入: {shares_to_buy}股 @ ${price:.2f}, 成本: ${total_cost:.2f}")
+                    logger.info(f"模拟买入: {shares_to_buy}股 @ ${price:.2f}, 成本: ${total_cost:.2f}")
         
         elif action == 'Sell' and self.portfolio_info['shares_held'] > 0:
             shares_to_sell = min(self.portfolio_info['shares_held'], max_shares)
@@ -287,15 +288,21 @@ class StockTrader:
                     self.portfolio_info['avg_cost'] = 0.0
                 
                 print(f"模拟卖出: {shares_to_sell}股 @ ${price:.2f}, 收入: ${total_revenue:.2f}")
+                logger.info(f"模拟卖出: {shares_to_sell}股 @ ${price:.2f}, 收入: ${total_revenue:.2f}")
         
         elif action == 'Hold':
             print("模拟持有: 不执行任何操作")
+            logger.info("模拟持有: 不执行任何操作")
         
         portfolio_value = self.portfolio_info['balance'] + (self.portfolio_info['shares_held'] * price)
-        print(f"当前投资组合: 余额=${self.portfolio_info['balance']:.2f}, "
-              f"持仓={self.portfolio_info['shares_held']}股, "
-              f"总成本=${self.portfolio_info['avg_cost']:.2f}/股, "
-              f"总价值=${portfolio_value:.2f}")
+        portfolio_msg = (
+            f"当前投资组合: 余额=${self.portfolio_info['balance']:.2f}, "
+            f"持仓={self.portfolio_info['shares_held']}股, "
+            f"总成本=${self.portfolio_info['avg_cost']:.2f}/股, "
+            f"总价值=${portfolio_value:.2f}"
+        )
+        print(portfolio_msg)
+        logger.info(portfolio_msg)
     
     def reset_portfolio(self):
         self.portfolio_info = {
@@ -305,6 +312,7 @@ class StockTrader:
         }
         self.recent_actions = []
         print("投资组合已重置")
+        logger.info("投资组合已重置")
     
     def load_historical_data(self, data: pd.DataFrame):
         self.historical_klines = data.copy()
