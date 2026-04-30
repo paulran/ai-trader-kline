@@ -151,3 +151,4 @@ Desktop.ini
 
 # Private
 data/*
+checkpoints/*.pt
