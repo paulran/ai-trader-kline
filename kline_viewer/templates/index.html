@@ -105,6 +105,7 @@
             display: flex;
             flex-direction: column;
             min-height: 0;
+            position: relative;
         }
         
         #mainChart {
@@ -127,32 +128,37 @@
         
         .tooltip {
             position: absolute;
-            background: rgba(22, 33, 62, 0.95);
-            border: 1px solid #e94560;
-            border-radius: 6px;
-            padding: 10px;
+            background: rgba(22, 33, 62, 0.98);
+            border: 2px solid #e94560;
+            border-radius: 8px;
+            padding: 12px;
             font-size: 12px;
             z-index: 1000;
             pointer-events: none;
-            max-width: 250px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            max-width: 280px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            display: none;
         }
         
         .tooltip .title {
             color: #e94560;
             font-weight: bold;
-            margin-bottom: 5px;
-            font-size: 13px;
+            margin-bottom: 8px;
+            font-size: 14px;
+            border-bottom: 1px solid #0f3460;
+            padding-bottom: 5px;
         }
         
         .tooltip .row {
             display: flex;
             justify-content: space-between;
-            margin: 3px 0;
+            margin: 4px 0;
+            line-height: 1.5;
         }
         
         .tooltip .label {
             color: #aaa;
+            margin-right: 20px;
         }
         
         .tooltip .value {
@@ -162,9 +168,71 @@
         
         .tooltip .buy {
             color: #4ade80;
+            font-weight: bold;
         }
         
         .tooltip .sell {
+            color: #f87171;
+            font-weight: bold;
+        }
+        
+        .tooltip .remark-box {
+            margin-top: 8px;
+            padding: 8px;
+            background: rgba(0,0,0,0.3);
+            border-radius: 4px;
+            border-left: 3px solid #e94560;
+        }
+        
+        .tooltip .remark-label {
+            color: #ffd700;
+            font-size: 11px;
+            margin-bottom: 4px;
+        }
+        
+        .tooltip .remark-text {
+            color: #fff;
+            font-size: 11px;
+            line-height: 1.4;
+            word-break: break-word;
+        }
+        
+        .signal-popup {
+            position: absolute;
+            background: rgba(22, 33, 62, 0.98);
+            border: 2px solid #4ade80;
+            border-radius: 8px;
+            padding: 12px;
+            font-size: 12px;
+            z-index: 1001;
+            max-width: 300px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            display: none;
+        }
+        
+        .signal-popup.buy {
+            border-color: #4ade80;
+        }
+        
+        .signal-popup.sell {
+            border-color: #f87171;
+        }
+        
+        .signal-popup .title {
+            color: #fff;
+            font-weight: bold;
+            margin-bottom: 8px;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .signal-popup.buy .title {
+            color: #4ade80;
+        }
+        
+        .signal-popup.sell .title {
             color: #f87171;
         }
         
@@ -198,6 +266,38 @@
             font-size: 13px;
             display: none;
         }
+        
+        .legend-box {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(22, 33, 62, 0.9);
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 11px;
+            z-index: 50;
+            display: none;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 5px 0;
+        }
+        
+        .legend-icon {
+            font-size: 16px;
+            font-weight: bold;
+        }
+        
+        .legend-icon.buy {
+            color: #4ade80;
+        }
+        
+        .legend-icon.sell {
+            color: #f87171;
+        }
     </style>
 </head>
 <body>
@@ -219,6 +319,7 @@
                 <option value="SPOT" selected>SPOT</option>
                 <option value="SWAP">SWAP</option>
                 <option value="FUTURES">FUTURES</option>
+                <option value="PERP">PERP</option>
             </select>
         </div>
         
@@ -278,7 +379,18 @@
         <span class="status" id="status">就绪</span>
     </div>
     
-    <div id="tooltip" class="tooltip" style="display: none;"></div>
+    <div id="tooltip" class="tooltip"></div>
+    <div id="signalPopup" class="signal-popup"></div>
+    <div id="legendBox" class="legend-box">
+        <div class="legend-item">
+            <span class="legend-icon buy">▲</span>
+            <span>买入信号</span>
+        </div>
+        <div class="legend-item">
+            <span class="legend-icon sell">▼</span>
+            <span>卖出信号</span>
+        </div>
+    </div>
     
     <script>
         let mainChart, volumeChart, indicatorChart;
@@ -288,6 +400,9 @@
         let currentSignals = [];
         let currentIndicators = {};
         let visibleIndicators = {};
+        let tooltipVisible = false;
+        let currentTooltipContent = '';
+        let signalPopupVisible = false;
         
         const chartColors = {
             up: '#4ade80',
@@ -326,6 +441,17 @@
                 start_time: params.get('start_time') || '',
                 end_time: params.get('end_time') || ''
             };
+        }
+        
+        function formatTime(timestamp) {
+            const date = new Date(timestamp * 1000);
+            return date.toLocaleString('zh-CN', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
         }
         
         function initCharts() {
@@ -445,69 +571,163 @@
             }
         }
         
-        function formatTime(timestamp) {
-            const date = new Date(timestamp * 1000);
-            return date.toLocaleString('zh-CN', {
-                year: 'numeric',
-                month: '2-digit',
-                day: '2-digit',
-                hour: '2-digit',
-                minute: '2-digit'
-            });
+        function hideTooltip() {
+            const tooltip = document.getElementById('tooltip');
+            tooltip.style.display = 'none';
+            tooltipVisible = false;
+            currentTooltipContent = '';
+        }
+        
+        function hideSignalPopup() {
+            const popup = document.getElementById('signalPopup');
+            popup.style.display = 'none';
+            signalPopupVisible = false;
+        }
+        
+        function showTooltip(content, x, y) {
+            const tooltip = document.getElementById('tooltip');
+            
+            if (content === currentTooltipContent && tooltipVisible) {
+                return;
+            }
+            
+            currentTooltipContent = content;
+            tooltip.innerHTML = content;
+            tooltip.style.display = 'block';
+            tooltipVisible = true;
+            
+            const chartRect = document.getElementById('mainChart').getBoundingClientRect();
+            let left = x + 15;
+            let top = y + 15;
+            
+            if (left + 280 > window.innerWidth) {
+                left = x - 295;
+            }
+            if (top + 200 > window.innerHeight) {
+                top = y - 215;
+            }
+            
+            if (left < 10) left = 10;
+            if (top < 10) top = 10;
+            
+            tooltip.style.left = left + 'px';
+            tooltip.style.top = top + 'px';
+        }
+        
+        function showSignalPopup(signal, x, y) {
+            const popup = document.getElementById('signalPopup');
+            const isBuy = signal.action_name === 'Buy';
+            
+            popup.className = 'signal-popup ' + (isBuy ? 'buy' : 'sell');
+            
+            let html = `
+                <div class="title">
+                    ${isBuy ? '▲ 买入信号' : '▼ 卖出信号'}
+                </div>
+                <div class="row">
+                    <span class="label">时间:</span>
+                    <span class="value">${formatTime(signal.time)}</span>
+                </div>
+                <div class="row">
+                    <span class="label">置信度:</span>
+                    <span class="value">${(signal.confidence * 100).toFixed(2)}%</span>
+                </div>
+            `;
+            
+            if (signal.remark) {
+                html += `
+                    <div class="remark-box">
+                        <div class="remark-label">📝 备注信息</div>
+                        <div class="remark-text">${signal.remark}</div>
+                    </div>
+                `;
+            }
+            
+            popup.innerHTML = html;
+            popup.style.display = 'block';
+            signalPopupVisible = true;
+            
+            const chartRect = document.getElementById('mainChart').getBoundingClientRect();
+            let left = x + 20;
+            let top = y - 10;
+            
+            if (left + 280 > window.innerWidth) {
+                left = x - 320;
+            }
+            
+            popup.style.left = left + 'px';
+            popup.style.top = top + 'px';
         }
         
         function onCrosshairMove(param) {
-            const tooltip = document.getElementById('tooltip');
-            
             if (!param.time || !param.point) {
-                tooltip.style.display = 'none';
+                hideTooltip();
+                hideSignalPopup();
                 return;
             }
             
             const klineData = currentData.find(d => d.time === param.time);
             if (!klineData) {
-                tooltip.style.display = 'none';
+                hideTooltip();
+                hideSignalPopup();
                 return;
             }
             
             const signal = currentSignals.find(s => s.time === param.time);
             
-            let html = `
+            let tooltipHtml = `
                 <div class="title">${formatTime(param.time)}</div>
-                <div class="row"><span class="label">开盘:</span><span class="value">${klineData.open.toFixed(2)}</span></div>
-                <div class="row"><span class="label">最高:</span><span class="value">${klineData.high.toFixed(2)}</span></div>
-                <div class="row"><span class="label">最低:</span><span class="value">${klineData.low.toFixed(2)}</span></div>
-                <div class="row"><span class="label">收盘:</span><span class="value">${klineData.close.toFixed(2)}</span></div>
-                <div class="row"><span class="label">成交量:</span><span class="value">${klineData.volume.toFixed(2)}</span></div>
+                <div class="row">
+                    <span class="label">开盘:</span>
+                    <span class="value">${klineData.open.toFixed(2)}</span>
+                </div>
+                <div class="row">
+                    <span class="label">最高:</span>
+                    <span class="value">${klineData.high.toFixed(2)}</span>
+                </div>
+                <div class="row">
+                    <span class="label">最低:</span>
+                    <span class="value">${klineData.low.toFixed(2)}</span>
+                </div>
+                <div class="row">
+                    <span class="label">收盘:</span>
+                    <span class="value">${klineData.close.toFixed(2)}</span>
+                </div>
+                <div class="row">
+                    <span class="label">成交量:</span>
+                    <span class="value">${klineData.volume.toFixed(2)}</span>
+                </div>
             `;
             
             if (signal) {
                 const actionClass = signal.action_name === 'Buy' ? 'buy' : 'sell';
-                html += `
-                    <div class="row"><span class="label">信号:</span><span class="value ${actionClass}">${signal.action_name}</span></div>
-                    <div class="row"><span class="label">置信度:</span><span class="value">${(signal.confidence * 100).toFixed(2)}%</span></div>
+                const actionText = signal.action_name === 'Buy' ? '买入' : '卖出';
+                tooltipHtml += `
+                    <div class="row">
+                        <span class="label">信号:</span>
+                        <span class="value ${actionClass}">${actionText}</span>
+                    </div>
+                    <div class="row">
+                        <span class="label">置信度:</span>
+                        <span class="value">${(signal.confidence * 100).toFixed(2)}%</span>
+                    </div>
                 `;
+                
                 if (signal.remark) {
-                    html += `<div class="row"><span class="label">备注:</span><span class="value">${signal.remark}</span></div>`;
+                    tooltipHtml += `
+                        <div class="remark-box">
+                            <div class="remark-label">📝 备注</div>
+                            <div class="remark-text">${signal.remark}</div>
+                        </div>
+                    `;
                 }
             }
             
-            tooltip.innerHTML = html;
-            tooltip.style.display = 'block';
-            
             const chartRect = document.getElementById('mainChart').getBoundingClientRect();
-            let left = chartRect.left + param.point.x + 15;
-            let top = chartRect.top + param.point.y + 15;
+            const x = chartRect.left + param.point.x;
+            const y = chartRect.top + param.point.y;
             
-            if (left + 250 > window.innerWidth) {
-                left = chartRect.left + param.point.x - 265;
-            }
-            if (top + 200 > window.innerHeight) {
-                top = chartRect.top + param.point.y - 215;
-            }
-            
-            tooltip.style.left = left + 'px';
-            tooltip.style.top = top + 'px';
+            showTooltip(tooltipHtml, x, y);
         }
         
         function createIndicatorSeries(type) {
@@ -714,6 +934,60 @@
             }
         }
         
+        function createSignalMarkers() {
+            if (!candlestickSeries || currentSignals.length === 0) {
+                document.getElementById('legendBox').style.display = 'none';
+                return;
+            }
+            
+            const markers = [];
+            const klineMap = new Map();
+            
+            currentData.forEach((kline, index) => {
+                klineMap.set(kline.time, {
+                    index: index,
+                    low: kline.low,
+                    high: kline.high,
+                    open: kline.open,
+                    close: kline.close
+                });
+            });
+            
+            currentSignals.forEach(signal => {
+                const klineInfo = klineMap.get(signal.time);
+                if (!klineInfo) return;
+                
+                const isBuy = signal.action_name === 'Buy';
+                
+                let position;
+                if (isBuy) {
+                    position = 'belowBar';
+                } else {
+                    position = 'aboveBar';
+                }
+                
+                const marker = {
+                    time: signal.time,
+                    position: position,
+                    color: isBuy ? chartColors.up : chartColors.down,
+                    shape: isBuy ? 'arrowUp' : 'arrowDown',
+                    text: isBuy ? '买' : '卖',
+                    size: 2
+                };
+                
+                markers.push(marker);
+            });
+            
+            if (markers.length > 0) {
+                candlestickSeries.setMarkers(markers);
+                document.getElementById('legendBox').style.display = 'block';
+                console.log(`已设置 ${markers.length} 个信号标记`);
+            } else {
+                candlestickSeries.setMarkers([]);
+                document.getElementById('legendBox').style.display = 'none';
+            }
+        }
+        
         async function loadData() {
             const exchange = document.getElementById('exchange').value;
             const instType = document.getElementById('instType').value;
@@ -781,6 +1055,8 @@
                     color: d.close >= d.open ? chartColors.up : chartColors.down
                 }));
                 volumeSeries.setData(volumeData);
+                
+                createSignalMarkers();
                 
                 updateMainChartIndicators();
                 updateIndicators();
