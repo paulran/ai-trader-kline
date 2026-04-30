@@ -62,7 +62,7 @@ class DataLoader:
     def load_training_data(self) -> List[pd.DataFrame]:
         data_frames = []
         
-        exchange = self.config.OKX_INST_ID.split('-')[0] if '-' in self.config.OKX_INST_ID else self.config.OKX_INST_ID
+        exchange = self.config.EXCHANGE
         symbol = self.config.OKX_INST_ID
         inst_type = self.config.OKX_INST_TYPE
         
@@ -100,7 +100,7 @@ class DataLoader:
     def load_testing_data(self) -> List[pd.DataFrame]:
         data_frames = []
         
-        exchange = self.config.OKX_INST_ID.split('-')[0] if '-' in self.config.OKX_INST_ID else self.config.OKX_INST_ID
+        exchange = self.config.EXCHANGE
         symbol = self.config.OKX_INST_ID
         inst_type = self.config.OKX_INST_TYPE
         
