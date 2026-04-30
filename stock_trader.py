@@ -140,9 +140,9 @@ class StockTrader:
     
     def predict_single_kline(self, time: str, open: float, high: float, 
                               low: float, close: float, volume: float,
-                              use_llm: bool = True) -> Dict:
+                              amount: float = None, use_llm: bool = True) -> Dict:
         new_kline = self.data_loader.create_realtime_input(
-            time, open, high, low, close, volume
+            time, open, high, low, close, volume, amount
         )
         
         if self.historical_klines.empty:
@@ -157,15 +157,19 @@ class StockTrader:
         if len(self.historical_klines) >= 5:
             self.historical_klines = self.data_loader._add_technical_indicators(self.historical_klines)
         
+        kline_info = {
+            'time': time,
+            'open': open,
+            'high': high,
+            'low': low,
+            'close': close,
+            'volume': volume
+        }
+        if amount is not None:
+            kline_info['amount'] = amount
+        
         result = {
-            'kline_info': {
-                'time': time,
-                'open': open,
-                'high': high,
-                'low': low,
-                'close': close,
-                'volume': volume
-            },
+            'kline_info': kline_info,
             'rl_prediction': None,
             'llm_analysis': None,
             'final_decision': None

@@ -14,6 +14,40 @@ from logger import logger
 OKX_DELAY_SECONDS = 10
 
 
+def parse_okx_candle_row(row: List, inst_type: str) -> List:
+    """
+    解析OKX K线数据行，根据交易类型提取正确的Volume和Amount
+    
+    OKX返回格式: [ts, o, h, l, c, vol, volCcy, volCcyQuote, confirm]
+    - SPOT(币币/币币杠杆): Volume=vol(基础货币数量), Amount=volCcyQuote(计价货币成交额)
+    - SWAP(衍生品合约): Volume=volCcy(币的数量, 因为vol是合约张数), Amount=volCcyQuote(计价货币成交额)
+    
+    Args:
+        row: OKX返回的原始K线数据行
+        inst_type: 交易类型，"SPOT" 或 "SWAP"
+    
+    Returns:
+        处理后的数据行: [time, open, high, low, close, volume, amount]
+    """
+    ts = row[0]
+    o = row[1]
+    h = row[2]
+    l = row[3]
+    c = row[4]
+    vol = row[5]
+    vol_ccy = row[6] if len(row) > 6 else "0"
+    vol_ccy_quote = row[7] if len(row) > 7 else "0"
+    
+    if inst_type.upper() == "SWAP":
+        volume = vol_ccy
+    else:
+        volume = vol
+    
+    amount = vol_ccy_quote
+    
+    return [ts, o, h, l, c, volume, amount]
+
+
 def get_next_aligned_time(bar_type: str) -> datetime:
     now = datetime.now()
     
@@ -60,6 +94,7 @@ def wait_for_aligned_time(bar_type: str) -> None:
 class OKXKlineFetcher:
     def __init__(self, config: Config = None):
         self.config = config or Config()
+        self.inst_type = self.config.OKX_INST_TYPE
         self.proxies = {
             "http": os.getenv("HTTP_PROXY"),
             "https": os.getenv("HTTPS_PROXY")
@@ -104,7 +139,7 @@ class OKXKlineFetcher:
             return None
     
     def save_to_csv(self, candle_data: List[List], bar: str) -> str:
-        headers = ['Time', 'Open', 'High', 'Low', 'Close', 'Volume']
+        headers = ['Time', 'Open', 'High', 'Low', 'Close', 'Volume', 'Amount']
         
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         file_name = f"{self.config.OKX_INST_ID}_{bar}_{timestamp}.csv"
@@ -115,7 +150,8 @@ class OKXKlineFetcher:
             writer.writerow(headers)
             
             for row in candle_data:
-                writer.writerow(row[:6])
+                parsed_row = parse_okx_candle_row(row, self.inst_type)
+                writer.writerow(parsed_row)
         
         logger.info(f"数据已保存: {file_path}")
         return file_path
@@ -123,13 +159,15 @@ class OKXKlineFetcher:
     def to_dataframe(self, candle_data: List[List]) -> pd.DataFrame:
         rows = []
         for row in candle_data:
+            parsed_row = parse_okx_candle_row(row, self.inst_type)
             rows.append({
-                'Time': int(row[0]),
-                'Open': float(row[1]),
-                'High': float(row[2]),
-                'Low': float(row[3]),
-                'Close': float(row[4]),
-                'Volume': float(row[5])
+                'Time': int(parsed_row[0]),
+                'Open': float(parsed_row[1]),
+                'High': float(parsed_row[2]),
+                'Low': float(parsed_row[3]),
+                'Close': float(parsed_row[4]),
+                'Volume': float(parsed_row[5]),
+                'Amount': float(parsed_row[6])
             })
         
         df = pd.DataFrame(rows)
@@ -189,12 +227,16 @@ class RealtimeAnalyzer:
         if kline_info:
             lines.append(f"时间: {kline_info.get('time', 'N/A')}")
             lines.append(f"交易对: {self.config.OKX_INST_ID}")
+            lines.append(f"交易类型: {self.config.OKX_INST_TYPE}")
             lines.append(f"K线周期: {self.bar}")
             lines.append(f"开盘: {kline_info.get('open', 0):.2f}")
             lines.append(f"最高: {kline_info.get('high', 0):.2f}")
             lines.append(f"最低: {kline_info.get('low', 0):.2f}")
             lines.append(f"收盘: {kline_info.get('close', 0):.2f}")
             lines.append(f"成交量: {kline_info.get('volume', 0):,}")
+            amount = kline_info.get('amount')
+            if amount is not None:
+                lines.append(f"成交额: {amount:,.2f}")
         
         lines.append("-" * 40)
         
@@ -314,6 +356,8 @@ class RealtimeAnalyzer:
         time_ms = int(latest_row['Time'])
         time_str = datetime.fromtimestamp(time_ms / 1000).strftime('%Y-%m-%d %H:%M:%S')
         
+        amount = latest_row.get('Amount', None)
+        
         result = self.trader.predict_single_kline(
             time=time_str,
             open=latest_row['Open'],
@@ -321,6 +365,7 @@ class RealtimeAnalyzer:
             low=latest_row['Low'],
             close=latest_row['Close'],
             volume=latest_row['Volume'],
+            amount=amount,
             use_llm=use_llm
         )
         
@@ -342,6 +387,9 @@ class RealtimeAnalyzer:
         logger.info(f"  最低: {kline_info.get('low', 0):.2f}")
         logger.info(f"  收盘: {kline_info.get('close', 0):.2f}")
         logger.info(f"  成交量: {kline_info.get('volume', 0):,}")
+        amount = kline_info.get('amount')
+        if amount is not None:
+            logger.info(f"  成交额: {amount:,.2f}")
         
         rl_pred = result.get('rl_prediction')
         if rl_pred:
@@ -412,6 +460,7 @@ class RealtimeAnalyzer:
         logger.info("="*60)
         logger.info(f"实时K线分析器启动")
         logger.info(f"交易对: {self.config.OKX_INST_ID}")
+        logger.info(f"交易类型: {self.config.OKX_INST_TYPE}")
         logger.info(f"K线周期: {self.bar}")
         logger.info(f"时间对齐: {'是 (延后10秒)' if use_aligned_time else '否'}")
         logger.info(f"刷新间隔: {self.interval} 秒")

@@ -46,6 +46,7 @@ class Config:
     # OKX API配置
     OKX_API_URL = os.getenv("OKX_API_URL", "https://www.okx.com/api/v5/market/candles")
     OKX_INST_ID = os.getenv("OKX_INST_ID", "BTC-USDT")
+    OKX_INST_TYPE = os.getenv("OKX_INST_TYPE", "SPOT")
     OKX_BAR_1M = "1m"
     OKX_BAR_15M = "15m"
     OKX_TIMEOUT = int(os.getenv("OKX_TIMEOUT", "20"))
