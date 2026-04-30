@@ -5,11 +5,13 @@ from pathlib import Path
 from datetime import datetime
 from config import Config
 from logger import logger
+from sqlite_store import SQLiteKlineStore
 
 class DataLoader:
     def __init__(self, config: Config = None):
         self.config = config or Config()
         self.config.create_directories()
+        self.sqlite_store = SQLiteKlineStore(self.config)
     
     def load_csv_file(self, file_path: str) -> pd.DataFrame:
         df = pd.read_csv(file_path)
@@ -58,36 +60,76 @@ class DataLoader:
         return df
     
     def load_training_data(self) -> List[pd.DataFrame]:
-        train_path = Path(self.config.TRAIN_DATA_PATH)
         data_frames = []
         
-        for file_path in train_path.glob('*.csv'):
+        exchange = self.config.OKX_INST_ID.split('-')[0] if '-' in self.config.OKX_INST_ID else self.config.OKX_INST_ID
+        symbol = self.config.OKX_INST_ID
+        inst_type = self.config.OKX_INST_TYPE
+        
+        sqlite_df = self.sqlite_store.load_klines(
+            exchange=exchange,
+            inst_type=inst_type,
+            symbol=symbol,
+            bar='1m'
+        )
+        
+        if not sqlite_df.empty:
             try:
-                df = self.load_csv_file(str(file_path))
+                df = self._preprocess_dataframe(sqlite_df)
                 data_frames.append(df)
+                logger.info(f"从SQLite加载训练数据: {len(df)} 条记录")
             except Exception as e:
-                logger.warning(f"警告: 无法加载文件 {file_path}: {e}")
+                logger.warning(f"警告: 无法处理SQLite数据: {e}")
         
         if not data_frames:
-            logger.warning("警告: 训练数据目录中没有找到有效的CSV文件，将生成示例数据")
+            train_path = Path(self.config.TRAIN_DATA_PATH)
+            for file_path in train_path.glob('*.csv'):
+                try:
+                    df = self.load_csv_file(str(file_path))
+                    data_frames.append(df)
+                except Exception as e:
+                    logger.warning(f"警告: 无法加载文件 {file_path}: {e}")
+        
+        if not data_frames:
+            logger.warning("警告: 训练数据目录中没有找到有效的数据文件，将生成示例数据")
             sample_df = self.generate_sample_data()
             data_frames.append(sample_df)
         
         return data_frames
     
     def load_testing_data(self) -> List[pd.DataFrame]:
-        test_path = Path(self.config.TEST_DATA_PATH)
         data_frames = []
         
-        for file_path in test_path.glob('*.csv'):
+        exchange = self.config.OKX_INST_ID.split('-')[0] if '-' in self.config.OKX_INST_ID else self.config.OKX_INST_ID
+        symbol = self.config.OKX_INST_ID
+        inst_type = self.config.OKX_INST_TYPE
+        
+        sqlite_df = self.sqlite_store.load_klines(
+            exchange=exchange,
+            inst_type=inst_type,
+            symbol=symbol,
+            bar='1m'
+        )
+        
+        if not sqlite_df.empty:
             try:
-                df = self.load_csv_file(str(file_path))
+                df = self._preprocess_dataframe(sqlite_df)
                 data_frames.append(df)
+                logger.info(f"从SQLite加载测试数据: {len(df)} 条记录")
             except Exception as e:
-                logger.warning(f"警告: 无法加载文件 {file_path}: {e}")
+                logger.warning(f"警告: 无法处理SQLite数据: {e}")
         
         if not data_frames:
-            logger.warning("警告: 测试数据目录中没有找到有效的CSV文件，将生成示例数据")
+            test_path = Path(self.config.TEST_DATA_PATH)
+            for file_path in test_path.glob('*.csv'):
+                try:
+                    df = self.load_csv_file(str(file_path))
+                    data_frames.append(df)
+                except Exception as e:
+                    logger.warning(f"警告: 无法加载文件 {file_path}: {e}")
+        
+        if not data_frames:
+            logger.warning("警告: 测试数据目录中没有找到有效的数据文件，将生成示例数据")
             sample_df = self.generate_sample_data()
             data_frames.append(sample_df)
         

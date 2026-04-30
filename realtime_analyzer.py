@@ -4,11 +4,12 @@ import time
 import requests
 import pandas as pd
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from config import Config
 from stock_trader import StockTrader
 from feishu_notifier import FeishuNotifier, get_notifier
 from logger import logger
+from sqlite_store import SQLiteKlineStore
 
 
 OKX_DELAY_SECONDS = 10
@@ -102,6 +103,8 @@ class OKXKlineFetcher:
             "http": os.getenv("HTTP_PROXY"),
             "https": os.getenv("HTTPS_PROXY")
         }
+        self.sqlite_store = SQLiteKlineStore(self.config)
+        self.exchange = self.config.OKX_INST_ID.split('-')[0] if '-' in self.config.OKX_INST_ID else self.config.OKX_INST_ID
     
     def fetch_candles(self, bar: str, remove_last: bool = True) -> Optional[List[List]]:
         params = {
@@ -156,8 +159,32 @@ class OKXKlineFetcher:
                 parsed_row = parse_okx_candle_row(row, self.inst_type)
                 writer.writerow(parsed_row)
         
-        logger.info(f"数据已保存: {file_path}")
+        logger.info(f"数据已保存到CSV: {file_path}")
         return file_path
+    
+    def save_to_sqlite(self, candle_data: List[List], bar: str) -> int:
+        klines = []
+        for row in candle_data:
+            parsed_row = parse_okx_candle_row(row, self.inst_type)
+            time = int(parsed_row[0])
+            open_price = float(parsed_row[1])
+            high = float(parsed_row[2])
+            low = float(parsed_row[3])
+            close = float(parsed_row[4])
+            volume = float(parsed_row[5])
+            amount = float(parsed_row[6])
+            klines.append((time, open_price, high, low, close, volume, amount))
+        
+        count = self.sqlite_store.insert_klines_batch(
+            exchange=self.exchange,
+            inst_type=self.inst_type,
+            symbol=self.config.OKX_INST_ID,
+            bar=bar,
+            klines=klines
+        )
+        
+        logger.info(f"数据已保存到SQLite: {count} 条记录")
+        return count
     
     def to_dataframe(self, candle_data: List[List]) -> pd.DataFrame:
         rows = []
@@ -439,7 +466,7 @@ class RealtimeAnalyzer:
         logger.info(f"成功获取 {len(candle_data)} 根K线数据")
         
         if save_data:
-            self.fetcher.save_to_csv(candle_data, self.bar)
+            self.fetcher.save_to_sqlite(candle_data, self.bar)
         
         result = self.analyze_candles(candle_data, use_llm)
         if result:

@@ -337,7 +337,7 @@ def parse_args():
                         help='禁用LLM分析，仅使用规则分析和强化学习 [仅realtime模式]')
     
     parser.add_argument('--no_save', action='store_true', default=False,
-                        help='不保存K线数据到CSV文件 [仅realtime模式]')
+                        help='不保存K线数据到SQLite数据库 [仅realtime模式]')
     
     parser.add_argument('--simulate', action='store_true', default=False,
                         help='启用模拟交易 [仅realtime模式]')
