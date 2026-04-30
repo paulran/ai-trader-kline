@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>K线图表展示</title>
-    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+    <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
     <style>
         * {
             margin: 0;
@@ -191,52 +191,12 @@
             color: #4ade80;
         }
         
-        .signal-marker {
-            position: absolute;
-            width: 16px;
-            height: 16px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 10px;
-            font-weight: bold;
-            cursor: pointer;
-            z-index: 100;
-            transform: translate(-50%, -50%);
-        }
-        
-        .signal-marker.buy {
-            background: #4ade80;
-            color: #000;
-        }
-        
-        .signal-marker.sell {
+        .error-message {
             background: #f87171;
-            color: #000;
-        }
-        
-        .legend {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            background: rgba(22, 33, 62, 0.9);
-            padding: 10px;
-            border-radius: 6px;
-            font-size: 11px;
-            z-index: 50;
-        }
-        
-        .legend-item {
-            display: flex;
-            align-items: center;
-            gap: 5px;
-            margin: 3px 0;
-        }
-        
-        .legend-color {
-            width: 20px;
-            height: 2px;
+            color: white;
+            padding: 10px 20px;
+            font-size: 13px;
+            display: none;
         }
     </style>
 </head>
@@ -305,6 +265,8 @@
         <label><input type="checkbox" id="showMACD" class="indicator-toggle" data-type="MACD"> MACD</label>
     </div>
     
+    <div class="error-message" id="errorMessage"></div>
+    
     <div class="chart-container">
         <div id="mainChart"></div>
         <div id="volumeChart"></div>
@@ -326,7 +288,6 @@
         let currentSignals = [];
         let currentIndicators = {};
         let visibleIndicators = {};
-        let signalMarkers = [];
         
         const chartColors = {
             up: '#4ade80',
@@ -346,6 +307,15 @@
             MACDHist: '#4ade80'
         };
         
+        function showError(message) {
+            const errorEl = document.getElementById('errorMessage');
+            errorEl.textContent = message;
+            errorEl.style.display = 'block';
+            setTimeout(() => {
+                errorEl.style.display = 'none';
+            }, 5000);
+        }
+        
         function parseURLParams() {
             const params = new URLSearchParams(window.location.search);
             return {
@@ -363,107 +333,115 @@
             const volumeChartEl = document.getElementById('volumeChart');
             const indicatorChartEl = document.getElementById('indicatorChart');
             
-            mainChart = LightweightCharts.createChart(mainChartEl, {
-                layout: {
-                    background: { type: 'solid', color: '#1a1a2e' },
-                    textColor: '#aaa'
-                },
-                grid: {
-                    vertLines: { color: '#16213e' },
-                    horzLines: { color: '#16213e' }
-                },
-                crosshair: {
-                    mode: LightweightCharts.CrosshairMode.Normal
-                },
-                rightPriceScale: {
-                    borderColor: '#0f3460'
-                },
-                timeScale: {
-                    borderColor: '#0f3460',
-                    timeVisible: true,
-                    secondsVisible: false
-                },
-                handleScroll: true,
-                handleScale: true
-            });
-            
-            volumeChart = LightweightCharts.createChart(volumeChartEl, {
-                layout: {
-                    background: { type: 'solid', color: '#1a1a2e' },
-                    textColor: '#aaa'
-                },
-                grid: {
-                    vertLines: { color: '#16213e' },
-                    horzLines: { color: '#16213e' }
-                },
-                rightPriceScale: {
-                    borderColor: '#0f3460'
-                },
-                timeScale: {
-                    visible: false
-                },
-                handleScroll: true,
-                handleScale: true
-            });
-            
-            indicatorChart = LightweightCharts.createChart(indicatorChartEl, {
-                layout: {
-                    background: { type: 'solid', color: '#1a1a2e' },
-                    textColor: '#aaa'
-                },
-                grid: {
-                    vertLines: { color: '#16213e' },
-                    horzLines: { color: '#16213e' }
-                },
-                rightPriceScale: {
-                    borderColor: '#0f3460'
-                },
-                timeScale: {
-                    visible: false
-                },
-                handleScroll: true,
-                handleScale: true
-            });
-            
-            candlestickSeries = mainChart.addCandlestickSeries({
-                upColor: chartColors.up,
-                downColor: chartColors.down,
-                borderUpColor: chartColors.up,
-                borderDownColor: chartColors.down,
-                wickUpColor: chartColors.up,
-                wickDownColor: chartColors.down
-            });
-            
-            volumeSeries = volumeChart.addHistogramSeries({
-                color: '#26a69a',
-                priceFormat: {
-                    type: 'volume'
-                },
-                priceScaleId: ''
-            });
-            
-            mainChart.timeScale().subscribeVisibleTimeRangeChange(onTimeRangeChanged);
-            volumeChart.timeScale().subscribeVisibleTimeRangeChange(onTimeRangeChanged);
-            indicatorChart.timeScale().subscribeVisibleTimeRangeChange(onTimeRangeChanged);
-            
-            const resizeObserver = new ResizeObserver(() => {
-                mainChart.applyOptions({ width: mainChartEl.clientWidth, height: mainChartEl.clientHeight });
-                volumeChart.applyOptions({ width: volumeChartEl.clientWidth, height: volumeChartEl.clientHeight });
-                indicatorChart.applyOptions({ width: indicatorChartEl.clientWidth, height: indicatorChartEl.clientHeight });
-            });
-            
-            resizeObserver.observe(mainChartEl);
-            resizeObserver.observe(volumeChartEl);
-            resizeObserver.observe(indicatorChartEl);
-            
-            mainChart.subscribeCrosshairMove(onCrosshairMove);
+            try {
+                mainChart = LightweightCharts.createChart(mainChartEl, {
+                    layout: {
+                        background: { type: 'solid', color: '#1a1a2e' },
+                        textColor: '#aaa'
+                    },
+                    grid: {
+                        vertLines: { color: '#16213e' },
+                        horzLines: { color: '#16213e' }
+                    },
+                    crosshair: {
+                        mode: LightweightCharts.CrosshairMode.Normal
+                    },
+                    rightPriceScale: {
+                        borderColor: '#0f3460'
+                    },
+                    timeScale: {
+                        borderColor: '#0f3460',
+                        timeVisible: true,
+                        secondsVisible: false
+                    },
+                    handleScroll: true,
+                    handleScale: true
+                });
+                
+                volumeChart = LightweightCharts.createChart(volumeChartEl, {
+                    layout: {
+                        background: { type: 'solid', color: '#1a1a2e' },
+                        textColor: '#aaa'
+                    },
+                    grid: {
+                        vertLines: { color: '#16213e' },
+                        horzLines: { color: '#16213e' }
+                    },
+                    rightPriceScale: {
+                        borderColor: '#0f3460'
+                    },
+                    timeScale: {
+                        visible: false
+                    },
+                    handleScroll: true,
+                    handleScale: true
+                });
+                
+                indicatorChart = LightweightCharts.createChart(indicatorChartEl, {
+                    layout: {
+                        background: { type: 'solid', color: '#1a1a2e' },
+                        textColor: '#aaa'
+                    },
+                    grid: {
+                        vertLines: { color: '#16213e' },
+                        horzLines: { color: '#16213e' }
+                    },
+                    rightPriceScale: {
+                        borderColor: '#0f3460'
+                    },
+                    timeScale: {
+                        visible: false
+                    },
+                    handleScroll: true,
+                    handleScale: true
+                });
+                
+                candlestickSeries = mainChart.addCandlestickSeries({
+                    upColor: chartColors.up,
+                    downColor: chartColors.down,
+                    borderUpColor: chartColors.up,
+                    borderDownColor: chartColors.down,
+                    wickUpColor: chartColors.up,
+                    wickDownColor: chartColors.down
+                });
+                
+                volumeSeries = volumeChart.addHistogramSeries({
+                    priceFormat: {
+                        type: 'volume'
+                    }
+                });
+                
+                mainChart.timeScale().subscribeVisibleTimeRangeChange(onTimeRangeChanged);
+                volumeChart.timeScale().subscribeVisibleTimeRangeChange(onTimeRangeChanged);
+                indicatorChart.timeScale().subscribeVisibleTimeRangeChange(onTimeRangeChanged);
+                
+                const resizeObserver = new ResizeObserver(() => {
+                    mainChart.applyOptions({ width: mainChartEl.clientWidth, height: mainChartEl.clientHeight });
+                    volumeChart.applyOptions({ width: volumeChartEl.clientWidth, height: volumeChartEl.clientHeight });
+                    indicatorChart.applyOptions({ width: indicatorChartEl.clientWidth, height: indicatorChartEl.clientHeight });
+                });
+                
+                resizeObserver.observe(mainChartEl);
+                resizeObserver.observe(volumeChartEl);
+                resizeObserver.observe(indicatorChartEl);
+                
+                mainChart.subscribeCrosshairMove(onCrosshairMove);
+                
+                console.log('图表初始化成功');
+            } catch (error) {
+                console.error('图表初始化失败:', error);
+                showError('图表初始化失败: ' + error.message);
+            }
         }
         
         function onTimeRangeChanged() {
-            const timeRange = mainChart.timeScale().getVisibleRange();
-            if (timeRange) {
-                volumeChart.timeScale().setVisibleRange(timeRange);
-                indicatorChart.timeScale().setVisibleRange(timeRange);
+            try {
+                const timeRange = mainChart.timeScale().getVisibleRange();
+                if (timeRange) {
+                    volumeChart.timeScale().setVisibleRange(timeRange);
+                    indicatorChart.timeScale().setVisibleRange(timeRange);
+                }
+            } catch (e) {
             }
         }
         
@@ -483,7 +461,6 @@
             
             if (!param.time || !param.point) {
                 tooltip.style.display = 'none';
-                hideSignalTooltip();
                 return;
             }
             
@@ -533,10 +510,6 @@
             tooltip.style.top = top + 'px';
         }
         
-        function hideSignalTooltip() {
-            document.getElementById('tooltip').style.display = 'none';
-        }
-        
         function createIndicatorSeries(type) {
             if (indicatorSeriesMap[type]) {
                 return indicatorSeriesMap[type];
@@ -548,27 +521,20 @@
                 case 'RSI':
                     series.RSI = indicatorChart.addLineSeries({
                         color: chartColors.RSI,
-                        lineWidth: 1,
-                        priceLineVisible: false
+                        lineWidth: 1
                     });
                     break;
                     
                 case 'MACD':
                     series.MACD = indicatorChart.addLineSeries({
                         color: chartColors.MACD,
-                        lineWidth: 1,
-                        priceLineVisible: false
+                        lineWidth: 1
                     });
                     series.MACDSignal = indicatorChart.addLineSeries({
                         color: chartColors.MACDSignal,
-                        lineWidth: 1,
-                        priceLineVisible: false
+                        lineWidth: 1
                     });
-                    series.MACDHist = indicatorChart.addHistogramSeries({
-                        priceFormat: {
-                            type: 'price'
-                        }
-                    });
+                    series.MACDHist = indicatorChart.addHistogramSeries({});
                     break;
             }
             
@@ -580,7 +546,9 @@
             for (const key in indicatorSeriesMap) {
                 const series = indicatorSeriesMap[key];
                 for (const s in series) {
-                    indicatorChart.removeSeries(series[s]);
+                    try {
+                        indicatorChart.removeSeries(series[s]);
+                    } catch(e) {}
                 }
             }
             indicatorSeriesMap = {};
@@ -604,7 +572,7 @@
                 const rsiValues = currentIndicators.RSI;
                 
                 for (let i = 0; i < timeData.length; i++) {
-                    if (rsiValues[i] !== undefined) {
+                    if (rsiValues[i] !== null && rsiValues[i] !== undefined) {
                         rsiData.push({
                             time: timeData[i],
                             value: rsiValues[i]
@@ -625,19 +593,19 @@
                 const histValues = currentIndicators.MACD_hist;
                 
                 for (let i = 0; i < timeData.length; i++) {
-                    if (macdValues[i] !== undefined) {
+                    if (macdValues[i] !== null && macdValues[i] !== undefined) {
                         macdData.push({
                             time: timeData[i],
                             value: macdValues[i]
                         });
                     }
-                    if (signalValues[i] !== undefined) {
+                    if (signalValues[i] !== null && signalValues[i] !== undefined) {
                         signalData.push({
                             time: timeData[i],
                             value: signalValues[i]
                         });
                     }
-                    if (histValues[i] !== undefined) {
+                    if (histValues[i] !== null && histValues[i] !== undefined) {
                         histData.push({
                             time: timeData[i],
                             value: histValues[i],
@@ -673,12 +641,12 @@
             const timeData = currentData.map(d => d.time);
             
             const indicatorConfigs = [
-                { id: 'SMA5', show: showSMA5, data: currentIndicators.SMA_5, color: chartColors.SMA5, label: 'SMA(5)' },
-                { id: 'SMA10', show: showSMA10, data: currentIndicators.SMA_10, color: chartColors.SMA10, label: 'SMA(10)' },
-                { id: 'SMA20', show: showSMA20, data: currentIndicators.SMA_20, color: chartColors.SMA20, label: 'SMA(20)' },
-                { id: 'SMA60', show: showSMA60, data: currentIndicators.SMA_60, color: chartColors.SMA60, label: 'SMA(60)' },
-                { id: 'EMA12', show: showEMA12, data: currentIndicators.EMA_12, color: chartColors.EMA12, label: 'EMA(12)' },
-                { id: 'EMA26', show: showEMA26, data: currentIndicators.EMA_26, color: chartColors.EMA26, label: 'EMA(26)' }
+                { id: 'SMA5', show: showSMA5, data: currentIndicators.SMA_5, color: chartColors.SMA5 },
+                { id: 'SMA10', show: showSMA10, data: currentIndicators.SMA_10, color: chartColors.SMA10 },
+                { id: 'SMA20', show: showSMA20, data: currentIndicators.SMA_20, color: chartColors.SMA20 },
+                { id: 'SMA60', show: showSMA60, data: currentIndicators.SMA_60, color: chartColors.SMA60 },
+                { id: 'EMA12', show: showEMA12, data: currentIndicators.EMA_12, color: chartColors.EMA12 },
+                { id: 'EMA26', show: showEMA26, data: currentIndicators.EMA_26, color: chartColors.EMA26 }
             ];
             
             indicatorConfigs.forEach(config => {
@@ -692,7 +660,7 @@
                     
                     const data = [];
                     for (let i = 0; i < timeData.length; i++) {
-                        if (config.data[i] !== undefined) {
+                        if (config.data[i] !== null && config.data[i] !== undefined) {
                             data.push({
                                 time: timeData[i],
                                 value: config.data[i]
@@ -729,7 +697,7 @@
                 const lowerData = [];
                 
                 for (let i = 0; i < timeData.length; i++) {
-                    if (currentIndicators.BB_upper[i] !== undefined) {
+                    if (currentIndicators.BB_upper[i] !== null && currentIndicators.BB_upper[i] !== undefined) {
                         upperData.push({ time: timeData[i], value: currentIndicators.BB_upper[i] });
                         middleData.push({ time: timeData[i], value: currentIndicators.BB_middle[i] });
                         lowerData.push({ time: timeData[i], value: currentIndicators.BB_lower[i] });
@@ -757,7 +725,7 @@
             document.getElementById('status').textContent = '加载中...';
             document.getElementById('status').style.color = '#ffd700';
             
-            let url = `/api/klines?exchange=${exchange}&type=${instType}&symbol=${symbol}&period=${period}`;
+            let url = `/api/klines?exchange=${exchange}&type=${instType}&symbol=${encodeURIComponent(symbol)}&period=${period}`;
             if (startTime) url += `&start_time=${startTime}`;
             if (endTime) url += `&end_time=${endTime}`;
             
@@ -772,19 +740,38 @@
             window.history.replaceState({}, '', `${window.location.pathname}?${newParams.toString()}`);
             
             try {
+                console.log('请求URL:', url);
                 const response = await fetch(url);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP错误: ${response.status}`);
+                }
+                
                 const result = await response.json();
+                console.log('API返回:', result);
                 
                 if (!result.success) {
                     document.getElementById('status').textContent = '加载失败';
                     document.getElementById('status').style.color = '#f87171';
                     document.getElementById('dataInfo').textContent = result.message || '未找到数据';
+                    showError(result.message || '未找到数据');
                     return;
                 }
                 
                 currentData = result.data;
                 currentSignals = result.signals;
                 currentIndicators = result.indicators;
+                
+                console.log('K线数据数量:', currentData.length);
+                console.log('信号数量:', currentSignals.length);
+                
+                if (currentData.length === 0) {
+                    document.getElementById('status').textContent = '无数据';
+                    document.getElementById('status').style.color = '#f87171';
+                    document.getElementById('dataInfo').textContent = '没有找到K线数据';
+                    showError('没有找到K线数据，请检查参数是否正确');
+                    return;
+                }
                 
                 candlestickSeries.setData(currentData);
                 
@@ -814,11 +801,15 @@
                 console.error('加载数据失败:', error);
                 document.getElementById('status').textContent = '加载错误';
                 document.getElementById('status').style.color = '#f87171';
+                showError('加载数据失败: ' + error.message);
             }
         }
         
         function bindEvents() {
-            document.getElementById('loadBtn').addEventListener('click', loadData);
+            document.getElementById('loadBtn').addEventListener('click', (e) => {
+                console.log('点击加载按钮');
+                loadData();
+            });
             
             document.querySelectorAll('.indicator-toggle').forEach(el => {
                 el.addEventListener('change', () => {
@@ -837,6 +828,9 @@
         }
         
         function init() {
+            console.log('页面初始化...');
+            console.log('LightweightCharts可用:', typeof LightweightCharts);
+            
             const params = parseURLParams();
             
             document.getElementById('exchange').value = params.exchange;
@@ -851,8 +845,8 @@
                 document.getElementById('endTime').value = params.end_time;
             }
             
-            initCharts();
             bindEvents();
+            initCharts();
             loadData();
         }
         
