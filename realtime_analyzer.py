@@ -9,7 +9,7 @@ from config import Config
 from stock_trader import StockTrader
 from feishu_notifier import FeishuNotifier, get_notifier
 from logger import logger
-from sqlite_store import SQLiteKlineStore
+from sqlite_store import SQLiteKlineStore, SignalStore
 
 
 OKX_DELAY_SECONDS = 10
@@ -227,6 +227,7 @@ class RealtimeAnalyzer:
         self.feishu_notifier: Optional[FeishuNotifier] = None
         
         self.fetcher = OKXKlineFetcher(self.config)
+        self.signal_store = SignalStore(self.config)
         self._init_feishu_notifier()
     
     def _init_feishu_notifier(self):
@@ -481,9 +482,81 @@ class RealtimeAnalyzer:
                         logger.info("准备发送飞书通知...")
                         self._send_feishu_notification(result)
                     
+                    self._save_signal_if_needed(result, current_action)
+                    
                     self.last_final_decision = current_action
         
         return result
+    
+    def _save_signal_if_needed(self, result: Dict, current_action: str) -> None:
+        if current_action not in ["Buy", "Sell"]:
+            return
+        
+        kline_info = result.get('kline_info', {})
+        if not kline_info:
+            return
+        
+        time_str = kline_info.get('time')
+        if not time_str:
+            return
+        
+        try:
+            dt = datetime.strptime(time_str, '%Y-%m-%d %H:%M:%S')
+            kline_time = int(dt.timestamp())
+        except ValueError:
+            try:
+                dt = datetime.strptime(time_str, '%Y-%m-%d %H:%M')
+                kline_time = int(dt.timestamp())
+            except ValueError:
+                logger.warning(f"无法解析时间格式: {time_str}")
+                return
+        
+        open_price = kline_info.get('open', 0)
+        high_price = kline_info.get('high', 0)
+        low_price = kline_info.get('low', 0)
+        close_price = kline_info.get('close', 0)
+        volume = kline_info.get('volume', 0)
+        amount = kline_info.get('amount', 0)
+        
+        rl_prediction = result.get('rl_prediction')
+        rl_action = rl_prediction.get('action') if rl_prediction else None
+        rl_q_values = rl_prediction.get('q_values') if rl_prediction else None
+        
+        llm_analysis = result.get('llm_analysis')
+        llm_action = llm_analysis.get('recommended_action') if llm_analysis else None
+        llm_confidence = llm_analysis.get('confidence') if llm_analysis else None
+        llm_analysis_text = llm_analysis.get('analysis') if llm_analysis else None
+        llm_risk_assessment = llm_analysis.get('risk_assessment') if llm_analysis else None
+        llm_reason = llm_analysis.get('reason') if llm_analysis else None
+        
+        combination_reason = None
+        if final_decision := result.get('final_decision'):
+            if combination_info := final_decision.get('combination_info'):
+                combination_reason = combination_info.get('combination_reason')
+        
+        self.signal_store.insert_signal(
+            exchange=self.config.EXCHANGE,
+            inst_type=self.config.OKX_INST_TYPE,
+            symbol=self.config.OKX_INST_ID,
+            bar=self.bar,
+            kline_time=kline_time,
+            action=current_action,
+            open_price=open_price,
+            high_price=high_price,
+            low_price=low_price,
+            close_price=close_price,
+            volume=volume,
+            amount=amount,
+            rl_action=rl_action,
+            rl_q_values=rl_q_values,
+            llm_action=llm_action,
+            llm_confidence=llm_confidence,
+            llm_analysis=llm_analysis_text,
+            llm_risk_assessment=llm_risk_assessment,
+            llm_reason=llm_reason,
+            combination_reason=combination_reason,
+            previous_action=self.last_final_decision
+        )
     
     def start(self, use_llm: bool = True, save_data: bool = True, 
                simulate_trade: bool = False, use_aligned_time: bool = True):
