@@ -13,6 +13,10 @@ let currentDataTimeMax = 0;
 let isLoadingData = false;
 let lastHoveredSignalTime = null;
 
+let klineTimeMap = new Map();
+let signalTimeMap = new Map();
+let lastTooltipTime = null;
+
 const chartColors = {
     up: '#4ade80',
     down: '#f87171',
@@ -301,8 +305,8 @@ function initCharts() {
             timeScale: {
                 visible: false
             },
-            handleScroll: true,
-            handleScale: true
+            handleScroll: false,
+            handleScale: false
         });
 
         indicatorChart = LightweightCharts.createChart(indicatorChartEl, {
@@ -320,8 +324,8 @@ function initCharts() {
             timeScale: {
                 visible: false
             },
-            handleScroll: true,
-            handleScale: true
+            handleScroll: false,
+            handleScale: false
         });
 
         candlestickSeries = mainChart.addCandlestickSeries({
@@ -363,15 +367,24 @@ function initCharts() {
 let lastLoadTime = 0;
 const LOAD_COOLDOWN = 500;
 
-function onTimeRangeChanged() {
+let lastSyncedTimeRange = null;
+
+function onTimeRangeChanged(timeRange) {
     try {
-        const timeRange = mainChart.timeScale().getVisibleRange();
-        if (timeRange) {
-            volumeChart.timeScale().setVisibleRange(timeRange);
-            indicatorChart.timeScale().setVisibleRange(timeRange);
+        if (!timeRange) {
+            timeRange = mainChart.timeScale().getVisibleRange();
         }
 
-        if (currentData.length > 0 && !isLoadingData) {
+        if (timeRange) {
+            const timeRangeStr = JSON.stringify(timeRange);
+            if (timeRangeStr !== lastSyncedTimeRange) {
+                volumeChart.timeScale().setVisibleRange(timeRange);
+                indicatorChart.timeScale().setVisibleRange(timeRange);
+                lastSyncedTimeRange = timeRangeStr;
+            }
+        }
+
+        if (currentData.length > 0 && !isLoadingData && timeRange) {
             const now = Date.now();
             if (now - lastLoadTime < LOAD_COOLDOWN) {
                 return;
@@ -380,18 +393,39 @@ function onTimeRangeChanged() {
             const visibleFrom = timeRange.from;
             const visibleTo = timeRange.to;
 
-            const dataThreshold = 10;
+            if (typeof visibleFrom !== 'number' || typeof visibleTo !== 'number') {
+                return;
+            }
+
             const firstDataTime = currentData[0].time;
             const lastDataTime = currentData[currentData.length - 1].time;
+
+            const period = document.getElementById('period').value;
+            let thresholdSeconds;
+            switch (period) {
+                case '1m': thresholdSeconds = 20 * 60; break;
+                case '5m': thresholdSeconds = 20 * 5 * 60; break;
+                case '15m': thresholdSeconds = 20 * 15 * 60; break;
+                case '1h': thresholdSeconds = 20 * 60 * 60; break;
+                case '4h': thresholdSeconds = 20 * 4 * 60 * 60; break;
+                case '1d': thresholdSeconds = 20 * 24 * 60 * 60; break;
+                default: thresholdSeconds = 20 * 60;
+            }
 
             let needLoadBefore = false;
             let needLoadAfter = false;
 
-            if (visibleFrom <= firstDataTime + dataThreshold * 60) {
+            if (visibleFrom <= firstDataTime + thresholdSeconds) {
                 needLoadBefore = true;
+                console.log('需要加载更早数据: visibleFrom=' + visibleFrom + 
+                    ', firstDataTime=' + firstDataTime + 
+                    ', threshold=' + thresholdSeconds);
             }
-            if (visibleTo >= lastDataTime - dataThreshold * 60) {
+            if (visibleTo >= lastDataTime - thresholdSeconds) {
                 needLoadAfter = true;
+                console.log('需要加载更晚数据: visibleTo=' + visibleTo + 
+                    ', lastDataTime=' + lastDataTime + 
+                    ', threshold=' + thresholdSeconds);
             }
 
             if (needLoadBefore || needLoadAfter) {
@@ -399,6 +433,7 @@ function onTimeRangeChanged() {
             }
         }
     } catch (e) {
+        console.error('onTimeRangeChanged error:', e);
     }
 }
 
@@ -465,6 +500,16 @@ async function loadMoreData(loadBefore, loadAfter) {
             currentData = mergedData;
             currentSignals = mergedSignals;
             currentIndicators = calculateAllIndicators(currentData);
+
+            klineTimeMap.clear();
+            currentData.forEach(kline => {
+                klineTimeMap.set(kline.time, kline);
+            });
+
+            signalTimeMap.clear();
+            currentSignals.forEach(signal => {
+                signalTimeMap.set(signal.time, signal);
+            });
 
             if (currentData.length > 0) {
                 currentDataTimeMin = currentData[0].time;
@@ -589,17 +634,30 @@ function onCrosshairMove(param) {
     if (!param.time || !param.point) {
         hideTooltip();
         hideSignalPopup();
+        lastTooltipTime = null;
         return;
     }
 
-    const klineData = currentData.find(d => d.time === param.time);
+    const klineData = klineTimeMap.get(param.time);
     if (!klineData) {
         hideTooltip();
         hideSignalPopup();
+        lastTooltipTime = null;
         return;
     }
 
-    const signal = currentSignals.find(s => s.time === param.time);
+    const signal = signalTimeMap.get(param.time);
+
+    const chartRect = document.getElementById('mainChart').getBoundingClientRect();
+    const x = chartRect.left + param.point.x;
+    const y = chartRect.top + param.point.y;
+
+    if (lastTooltipTime === param.time) {
+        showTooltip(currentTooltipContent, x, y);
+        return;
+    }
+
+    lastTooltipTime = param.time;
 
     let tooltipHtml = `
         <div class="title">${formatTime(param.time)}</div>
@@ -648,10 +706,6 @@ function onCrosshairMove(param) {
             `;
         }
     }
-
-    const chartRect = document.getElementById('mainChart').getBoundingClientRect();
-    const x = chartRect.left + param.point.x;
-    const y = chartRect.top + param.point.y;
 
     showTooltip(tooltipHtml, x, y);
 }
@@ -961,6 +1015,18 @@ async function loadData() {
         currentData = result.data;
         currentSignals = result.signals;
         currentIndicators = calculateAllIndicators(currentData);
+
+        klineTimeMap.clear();
+        currentData.forEach(kline => {
+            klineTimeMap.set(kline.time, kline);
+        });
+
+        signalTimeMap.clear();
+        currentSignals.forEach(signal => {
+            signalTimeMap.set(signal.time, signal);
+        });
+
+        lastTooltipTime = null;
 
         if (currentData.length > 0) {
             currentDataTimeMin = currentData[0].time;
