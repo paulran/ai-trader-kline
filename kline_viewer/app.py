@@ -16,34 +16,7 @@ kline_store = SQLiteKlineStore(config)
 signal_store = SignalStore(config)
 
 
-def calculate_technical_indicators(df):
-    df = df.copy()
-    
-    df['SMA_5'] = df['Close'].rolling(window=5).mean()
-    df['SMA_10'] = df['Close'].rolling(window=10).mean()
-    df['SMA_20'] = df['Close'].rolling(window=20).mean()
-    df['SMA_60'] = df['Close'].rolling(window=60).mean()
-    
-    delta = df['Close'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-    rs = gain / loss
-    df['RSI'] = 100 - (100 / (1 + rs))
-    
-    ema_12 = df['Close'].ewm(span=12, adjust=False).mean()
-    ema_26 = df['Close'].ewm(span=26, adjust=False).mean()
-    df['MACD'] = ema_12 - ema_26
-    df['MACD_signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
-    df['MACD_hist'] = df['MACD'] - df['MACD_signal']
-    
-    df['BB_upper'] = df['SMA_20'] + 2 * df['Close'].rolling(window=20).std()
-    df['BB_lower'] = df['SMA_20'] - 2 * df['Close'].rolling(window=20).std()
-    df['BB_middle'] = df['SMA_20']
-    
-    df['EMA_12'] = ema_12
-    df['EMA_26'] = ema_26
-    
-    return df
+
 
 
 @app.route('/')
@@ -101,11 +74,8 @@ def get_klines():
                 'success': False,
                 'message': f'No data found for {exchange} {inst_type} {symbol} {period}',
                 'data': [],
-                'signals': [],
-                'indicators': {}
+                'signals': []
             })
-        
-        df = calculate_technical_indicators(df)
         
         klines_data = []
         for idx, row in df.iterrows():
@@ -141,36 +111,10 @@ def get_klines():
                     'remark': row['remark'] if pd.notna(row['remark']) else ''
                 })
         
-        def get_indicator_list(col_name):
-            result = []
-            for val in df[col_name].values:
-                if pd.isna(val):
-                    result.append(None)
-                else:
-                    result.append(float(val))
-            return result
-        
-        indicators = {
-            'SMA_5': get_indicator_list('SMA_5'),
-            'SMA_10': get_indicator_list('SMA_10'),
-            'SMA_20': get_indicator_list('SMA_20'),
-            'SMA_60': get_indicator_list('SMA_60'),
-            'EMA_12': get_indicator_list('EMA_12'),
-            'EMA_26': get_indicator_list('EMA_26'),
-            'RSI': get_indicator_list('RSI'),
-            'MACD': get_indicator_list('MACD'),
-            'MACD_signal': get_indicator_list('MACD_signal'),
-            'MACD_hist': get_indicator_list('MACD_hist'),
-            'BB_upper': get_indicator_list('BB_upper'),
-            'BB_middle': get_indicator_list('BB_middle'),
-            'BB_lower': get_indicator_list('BB_lower')
-        }
-        
         result = {
             'success': True,
             'data': klines_data,
             'signals': signals_data,
-            'indicators': indicators,
             'metadata': {
                 'exchange': exchange,
                 'type': inst_type,
@@ -191,8 +135,7 @@ def get_klines():
             'success': False,
             'message': str(e),
             'data': [],
-            'signals': [],
-            'indicators': {}
+            'signals': []
         })
 
 

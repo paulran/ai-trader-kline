@@ -8,6 +8,10 @@ let visibleIndicators = {};
 let tooltipVisible = false;
 let currentTooltipContent = '';
 let signalPopupVisible = false;
+let currentDataTimeMin = 0;
+let currentDataTimeMax = 0;
+let isLoadingData = false;
+let lastHoveredSignalTime = null;
 
 const chartColors = {
     up: '#4ade80',
@@ -26,6 +30,199 @@ const chartColors = {
     MACDSignal: '#ff6b6b',
     MACDHist: '#4ade80'
 };
+
+function calculateSMA(data, window) {
+    const result = [];
+    for (let i = 0; i < data.length; i++) {
+        if (i < window - 1) {
+            result.push(null);
+        } else {
+            let sum = 0;
+            for (let j = 0; j < window; j++) {
+                sum += data[i - j];
+            }
+            result.push(sum / window);
+        }
+    }
+    return result;
+}
+
+function calculateEMA(data, span) {
+    const result = [];
+    const multiplier = 2 / (span + 1);
+    let ema = data[0];
+    result[0] = ema;
+    
+    for (let i = 1; i < data.length; i++) {
+        ema = (data[i] - ema) * multiplier + ema;
+        result.push(ema);
+    }
+    return result;
+}
+
+function calculateRSI(closePrices, period = 14) {
+    const result = [];
+    const deltas = [];
+    
+    for (let i = 1; i < closePrices.length; i++) {
+        deltas.push(closePrices[i] - closePrices[i - 1]);
+    }
+    
+    for (let i = 0; i < closePrices.length; i++) {
+        if (i < period) {
+            result.push(null);
+        } else {
+            let gains = 0;
+            let losses = 0;
+            
+            for (let j = i - period + 1; j <= i; j++) {
+                const delta = closePrices[j] - closePrices[j - 1];
+                if (delta > 0) {
+                    gains += delta;
+                } else if (delta < 0) {
+                    losses += Math.abs(delta);
+                }
+            }
+            
+            if (losses === 0) {
+                result.push(100);
+            } else if (gains === 0) {
+                result.push(0);
+            } else {
+                const rs = (gains / period) / (losses / period);
+                const rsi = 100 - (100 / (1 + rs));
+                result.push(rsi);
+            }
+        }
+    }
+    return result;
+}
+
+function calculateMACD(closePrices, fastPeriod = 12, slowPeriod = 26, signalPeriod = 9) {
+    const emaFast = calculateEMA(closePrices, fastPeriod);
+    const emaSlow = calculateEMA(closePrices, slowPeriod);
+    
+    const macd = [];
+    for (let i = 0; i < closePrices.length; i++) {
+        if (i < slowPeriod - 1) {
+            macd.push(null);
+        } else {
+            macd.push(emaFast[i] - emaSlow[i]);
+        }
+    }
+    
+    const validMacd = [];
+    const validIndices = [];
+    for (let i = 0; i < macd.length; i++) {
+        if (macd[i] !== null) {
+            validMacd.push(macd[i]);
+            validIndices.push(i);
+        }
+    }
+    
+    const signal = [];
+    if (validMacd.length > 0) {
+        const emaSignal = calculateEMA(validMacd, signalPeriod);
+        let signalIdx = 0;
+        for (let i = 0; i < macd.length; i++) {
+            if (signalIdx < validIndices.length && i === validIndices[signalIdx]) {
+                signal.push(emaSignal[signalIdx]);
+                signalIdx++;
+            } else {
+                signal.push(null);
+            }
+        }
+    } else {
+        for (let i = 0; i < macd.length; i++) {
+            signal.push(null);
+        }
+    }
+    
+    const hist = [];
+    for (let i = 0; i < macd.length; i++) {
+        if (macd[i] !== null && signal[i] !== null) {
+            hist.push(macd[i] - signal[i]);
+        } else {
+            hist.push(null);
+        }
+    }
+    
+    return {
+        MACD: macd,
+        MACD_signal: signal,
+        MACD_hist: hist,
+        EMA_12: emaFast,
+        EMA_26: emaSlow
+    };
+}
+
+function calculateBollingerBands(closePrices, window = 20, stdDev = 2) {
+    const sma = calculateSMA(closePrices, window);
+    const upper = [];
+    const lower = [];
+    
+    for (let i = 0; i < closePrices.length; i++) {
+        if (i < window - 1) {
+            upper.push(null);
+            lower.push(null);
+        } else {
+            let sum = 0;
+            for (let j = 0; j < window; j++) {
+                sum += closePrices[i - j];
+            }
+            const mean = sum / window;
+            
+            let variance = 0;
+            for (let j = 0; j < window; j++) {
+                variance += Math.pow(closePrices[i - j] - mean, 2);
+            }
+            variance = variance / window;
+            const std = Math.sqrt(variance);
+            
+            upper.push(mean + stdDev * std);
+            lower.push(mean - stdDev * std);
+        }
+    }
+    
+    return {
+        BB_upper: upper,
+        BB_middle: sma,
+        BB_lower: lower
+    };
+}
+
+function calculateAllIndicators(data) {
+    if (!data || data.length === 0) {
+        return {};
+    }
+    
+    const closePrices = data.map(d => d.close);
+    
+    const sma5 = calculateSMA(closePrices, 5);
+    const sma10 = calculateSMA(closePrices, 10);
+    const sma20 = calculateSMA(closePrices, 20);
+    const sma60 = calculateSMA(closePrices, 60);
+    
+    const macdResult = calculateMACD(closePrices);
+    const rsi = calculateRSI(closePrices, 14);
+    const bbResult = calculateBollingerBands(closePrices, 20, 2);
+    
+    return {
+        SMA_5: sma5,
+        SMA_10: sma10,
+        SMA_20: sma20,
+        SMA_60: sma60,
+        EMA_12: macdResult.EMA_12,
+        EMA_26: macdResult.EMA_26,
+        RSI: rsi,
+        MACD: macdResult.MACD,
+        MACD_signal: macdResult.MACD_signal,
+        MACD_hist: macdResult.MACD_hist,
+        BB_upper: bbResult.BB_upper,
+        BB_middle: bbResult.BB_middle,
+        BB_lower: bbResult.BB_lower
+    };
+}
 
 function showError(message) {
     const errorEl = document.getElementById('errorMessage');
@@ -143,8 +340,6 @@ function initCharts() {
         });
 
         mainChart.timeScale().subscribeVisibleTimeRangeChange(onTimeRangeChanged);
-        volumeChart.timeScale().subscribeVisibleTimeRangeChange(onTimeRangeChanged);
-        indicatorChart.timeScale().subscribeVisibleTimeRangeChange(onTimeRangeChanged);
 
         const resizeObserver = new ResizeObserver(() => {
             mainChart.applyOptions({ width: mainChartEl.clientWidth, height: mainChartEl.clientHeight });
@@ -165,6 +360,9 @@ function initCharts() {
     }
 }
 
+let lastLoadTime = 0;
+const LOAD_COOLDOWN = 500;
+
 function onTimeRangeChanged() {
     try {
         const timeRange = mainChart.timeScale().getVisibleRange();
@@ -172,7 +370,129 @@ function onTimeRangeChanged() {
             volumeChart.timeScale().setVisibleRange(timeRange);
             indicatorChart.timeScale().setVisibleRange(timeRange);
         }
+
+        if (currentData.length > 0 && !isLoadingData) {
+            const now = Date.now();
+            if (now - lastLoadTime < LOAD_COOLDOWN) {
+                return;
+            }
+
+            const visibleFrom = timeRange.from;
+            const visibleTo = timeRange.to;
+
+            const dataThreshold = 10;
+            const firstDataTime = currentData[0].time;
+            const lastDataTime = currentData[currentData.length - 1].time;
+
+            let needLoadBefore = false;
+            let needLoadAfter = false;
+
+            if (visibleFrom <= firstDataTime + dataThreshold * 60) {
+                needLoadBefore = true;
+            }
+            if (visibleTo >= lastDataTime - dataThreshold * 60) {
+                needLoadAfter = true;
+            }
+
+            if (needLoadBefore || needLoadAfter) {
+                loadMoreData(needLoadBefore, needLoadAfter);
+            }
+        }
     } catch (e) {
+    }
+}
+
+async function loadMoreData(loadBefore, loadAfter) {
+    if (isLoadingData || currentData.length === 0) {
+        return;
+    }
+
+    isLoadingData = true;
+    lastLoadTime = Date.now();
+
+    const exchange = document.getElementById('exchange').value;
+    const instType = document.getElementById('instType').value;
+    const symbol = document.getElementById('symbol').value;
+    const period = document.getElementById('period').value;
+
+    const firstDataTime = currentData[0].time;
+    const lastDataTime = currentData[currentData.length - 1].time;
+
+    let url = `/api/klines?exchange=${exchange}&type=${instType}&symbol=${encodeURIComponent(symbol)}&period=${period}`;
+
+    if (loadBefore) {
+        const beforeTime = firstDataTime - 24 * 60 * 60;
+        url += `&end_time=${firstDataTime - 1}&start_time=${beforeTime}`;
+    } else if (loadAfter) {
+        const afterTime = lastDataTime + 24 * 60 * 60;
+        url += `&start_time=${lastDataTime + 1}&end_time=${afterTime}`;
+    }
+
+    try {
+        console.log('请求更多数据:', url);
+        const response = await fetch(url);
+
+        if (!response.ok) {
+            throw new Error(`HTTP错误: ${response.status}`);
+        }
+
+        const result = await response.json();
+
+        if (result.success && result.data && result.data.length > 0) {
+            const newData = result.data;
+            const newSignals = result.signals || [];
+
+            let mergedData = [...currentData];
+            let mergedSignals = [...currentSignals];
+
+            if (loadBefore) {
+                const existingTimes = new Set(currentData.map(d => d.time));
+                const newDataToAdd = newData.filter(d => !existingTimes.has(d.time));
+                mergedData = [...newDataToAdd, ...currentData];
+            } else {
+                const existingTimes = new Set(currentData.map(d => d.time));
+                const newDataToAdd = newData.filter(d => !existingTimes.has(d.time));
+                mergedData = [...currentData, ...newDataToAdd];
+            }
+
+            const existingSignalTimes = new Set(currentSignals.map(s => s.time));
+            const newSignalsToAdd = newSignals.filter(s => !existingSignalTimes.has(s.time));
+            mergedSignals = [...currentSignals, ...newSignalsToAdd];
+
+            mergedData.sort((a, b) => a.time - b.time);
+            mergedSignals.sort((a, b) => a.time - b.time);
+
+            currentData = mergedData;
+            currentSignals = mergedSignals;
+            currentIndicators = calculateAllIndicators(currentData);
+
+            if (currentData.length > 0) {
+                currentDataTimeMin = currentData[0].time;
+                currentDataTimeMax = currentData[currentData.length - 1].time;
+            }
+
+            candlestickSeries.setData(currentData);
+
+            const volumeData = currentData.map(d => ({
+                time: d.time,
+                value: d.volume,
+                color: d.close >= d.open ? chartColors.up : chartColors.down
+            }));
+            volumeSeries.setData(volumeData);
+
+            createSignalMarkers();
+
+            updateMainChartIndicators();
+            updateIndicators();
+
+            console.log('已合并更多数据，总数据量:', currentData.length);
+            document.getElementById('dataInfo').textContent = 
+                `数据: ${exchange} | ${symbol} | ${period} | ${currentData.length} 条K线 | ${currentSignals.length} 个信号`;
+        }
+    } catch (error) {
+        console.error('加载更多数据失败:', error);
+    } finally {
+        isLoadingData = false;
     }
 }
 
@@ -192,15 +512,6 @@ function hideSignalPopup() {
 function showTooltip(content, x, y) {
     const tooltip = document.getElementById('tooltip');
 
-    if (content === currentTooltipContent && tooltipVisible) {
-        return;
-    }
-
-    currentTooltipContent = content;
-    tooltip.innerHTML = content;
-    tooltip.style.display = 'block';
-    tooltipVisible = true;
-
     const chartRect = document.getElementById('mainChart').getBoundingClientRect();
     let left = x + 15;
     let top = y + 15;
@@ -215,6 +526,16 @@ function showTooltip(content, x, y) {
     if (left < 10) left = 10;
     if (top < 10) top = 10;
 
+    if (content === currentTooltipContent && tooltipVisible) {
+        tooltip.style.left = left + 'px';
+        tooltip.style.top = top + 'px';
+        return;
+    }
+
+    currentTooltipContent = content;
+    tooltip.innerHTML = content;
+    tooltip.style.display = 'block';
+    tooltipVisible = true;
     tooltip.style.left = left + 'px';
     tooltip.style.top = top + 'px';
 }
@@ -639,10 +960,16 @@ async function loadData() {
 
         currentData = result.data;
         currentSignals = result.signals;
-        currentIndicators = result.indicators;
+        currentIndicators = calculateAllIndicators(currentData);
+
+        if (currentData.length > 0) {
+            currentDataTimeMin = currentData[0].time;
+            currentDataTimeMax = currentData[currentData.length - 1].time;
+        }
 
         console.log('K线数据数量:', currentData.length);
         console.log('信号数量:', currentSignals.length);
+        console.log('时间范围:', new Date(currentDataTimeMin * 1000).toLocaleString(), '-', new Date(currentDataTimeMax * 1000).toLocaleString());
 
         if (currentData.length === 0) {
             document.getElementById('status').textContent = '无数据';
