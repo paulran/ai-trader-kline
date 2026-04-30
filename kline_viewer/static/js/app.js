@@ -365,35 +365,33 @@ function initCharts() {
 }
 
 let lastLoadTime = 0;
-const LOAD_COOLDOWN = 500;
+const LOAD_COOLDOWN = 1500;
 
-let lastSyncedTimeRange = null;
-
-function onTimeRangeChanged(timeRange) {
+function onTimeRangeChanged() {
     try {
-        if (!timeRange) {
-            timeRange = mainChart.timeScale().getVisibleRange();
+        const mainTimeRange = mainChart.timeScale().getVisibleRange();
+        
+        if (!mainTimeRange) {
+            return;
         }
 
-        if (timeRange) {
-            const timeRangeStr = JSON.stringify(timeRange);
-            if (timeRangeStr !== lastSyncedTimeRange) {
-                volumeChart.timeScale().setVisibleRange(timeRange);
-                indicatorChart.timeScale().setVisibleRange(timeRange);
-                lastSyncedTimeRange = timeRangeStr;
-            }
+        const from = mainTimeRange.from;
+        const to = mainTimeRange.to;
+
+        if (typeof from !== 'number' || typeof to !== 'number') {
+            return;
         }
 
-        if (currentData.length > 0 && !isLoadingData && timeRange) {
+        try {
+            volumeChart.timeScale().setVisibleRange({ from: from, to: to });
+            indicatorChart.timeScale().setVisibleRange({ from: from, to: to });
+        } catch (syncError) {
+            console.warn('同步时间范围失败:', syncError);
+        }
+
+        if (currentData.length > 0 && !isLoadingData) {
             const now = Date.now();
             if (now - lastLoadTime < LOAD_COOLDOWN) {
-                return;
-            }
-
-            const visibleFrom = timeRange.from;
-            const visibleTo = timeRange.to;
-
-            if (typeof visibleFrom !== 'number' || typeof visibleTo !== 'number') {
                 return;
             }
 
@@ -401,31 +399,34 @@ function onTimeRangeChanged(timeRange) {
             const lastDataTime = currentData[currentData.length - 1].time;
 
             const period = document.getElementById('period').value;
-            let thresholdSeconds;
+            let barSeconds;
             switch (period) {
-                case '1m': thresholdSeconds = 20 * 60; break;
-                case '5m': thresholdSeconds = 20 * 5 * 60; break;
-                case '15m': thresholdSeconds = 20 * 15 * 60; break;
-                case '1h': thresholdSeconds = 20 * 60 * 60; break;
-                case '4h': thresholdSeconds = 20 * 4 * 60 * 60; break;
-                case '1d': thresholdSeconds = 20 * 24 * 60 * 60; break;
-                default: thresholdSeconds = 20 * 60;
+                case '1m': barSeconds = 60; break;
+                case '5m': barSeconds = 5 * 60; break;
+                case '15m': barSeconds = 15 * 60; break;
+                case '1h': barSeconds = 60 * 60; break;
+                case '4h': barSeconds = 4 * 60 * 60; break;
+                case '1d': barSeconds = 24 * 60 * 60; break;
+                default: barSeconds = 60;
             }
+
+            const thresholdBars = 50;
+            const thresholdSeconds = thresholdBars * barSeconds;
 
             let needLoadBefore = false;
             let needLoadAfter = false;
 
-            if (visibleFrom <= firstDataTime + thresholdSeconds) {
+            if (from <= firstDataTime + thresholdSeconds) {
                 needLoadBefore = true;
-                console.log('需要加载更早数据: visibleFrom=' + visibleFrom + 
-                    ', firstDataTime=' + firstDataTime + 
-                    ', threshold=' + thresholdSeconds);
+                console.log('需要加载更早数据: visibleFrom=' + 
+                    new Date(from * 1000).toLocaleString() + 
+                    ', firstDataTime=' + new Date(firstDataTime * 1000).toLocaleString());
             }
-            if (visibleTo >= lastDataTime - thresholdSeconds) {
+            if (to >= lastDataTime - thresholdSeconds) {
                 needLoadAfter = true;
-                console.log('需要加载更晚数据: visibleTo=' + visibleTo + 
-                    ', lastDataTime=' + lastDataTime + 
-                    ', threshold=' + thresholdSeconds);
+                console.log('需要加载更晚数据: visibleTo=' + 
+                    new Date(to * 1000).toLocaleString() + 
+                    ', lastDataTime=' + new Date(lastDataTime * 1000).toLocaleString());
             }
 
             if (needLoadBefore || needLoadAfter) {
