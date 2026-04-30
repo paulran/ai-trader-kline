@@ -38,7 +38,12 @@ class DataLoader:
             except Exception as e:
                 raise ValueError(f"时间格式转换失败: {e}")
         
-        for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
+        numeric_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+        if 'Amount' in df.columns:
+            numeric_columns.append('Amount')
+            df['Amount'] = pd.to_numeric(df['Amount'], errors='coerce').fillna(0)
+        
+        for col in numeric_columns:
             df[col] = pd.to_numeric(df[col], errors='coerce')
             if df[col].isnull().any():
                 raise ValueError(f"列 {col} 包含无效数值")
@@ -104,6 +109,7 @@ class DataLoader:
         highs = [p * (1 + np.random.uniform(0, volatility/2)) for p in prices]
         lows = [p * (1 - np.random.uniform(0, volatility/2)) for p in prices]
         volumes = [int(np.random.randint(1000000, 10000000)) for _ in range(days)]
+        amounts = [volumes[i] * closes[i] for i in range(days)]
         
         df = pd.DataFrame({
             'Time': dates,
@@ -111,7 +117,8 @@ class DataLoader:
             'High': highs,
             'Low': lows,
             'Close': closes,
-            'Volume': volumes
+            'Volume': volumes,
+            'Amount': amounts
         })
         
         df = self._add_technical_indicators(df)
@@ -208,13 +215,17 @@ class DataLoader:
         
         return features
     
-    def create_realtime_input(self, time: str, open: float, high: float, low: float, close: float, volume: float) -> pd.DataFrame:
-        df = pd.DataFrame([{
+    def create_realtime_input(self, time: str, open: float, high: float, low: float, 
+                               close: float, volume: float, amount: float = None) -> pd.DataFrame:
+        data = {
             'Time': pd.to_datetime(time),
             'Open': open,
             'High': high,
             'Low': low,
             'Close': close,
             'Volume': volume
-        }])
+        }
+        if amount is not None:
+            data['Amount'] = amount
+        df = pd.DataFrame([data])
         return df
