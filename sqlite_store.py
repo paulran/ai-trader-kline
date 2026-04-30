@@ -16,7 +16,7 @@ class SQLiteKlineStore:
     def _get_db_path(self, exchange: str, inst_type: str, symbol: str, 
                      bar: str, year_month: str) -> str:
         db_name = f"{exchange}_{inst_type}_{symbol}_{bar}_{year_month}.db"
-        return os.path.join(self.config.REALTIME_DATA_PATH, db_name)
+        return os.path.join(self.config.DATA_PATH, db_name)
     
     def _get_year_month_from_timestamp(self, timestamp: int) -> str:
         dt = datetime.fromtimestamp(timestamp)
@@ -201,7 +201,7 @@ class SQLiteKlineStore:
     
     def _get_all_available_year_months(self, exchange: str, inst_type: str, 
                                           symbol: str, bar: str) -> List[str]:
-        data_path = Path(self.config.REALTIME_DATA_PATH)
+        data_path = Path(self.config.DATA_PATH)
         prefix = f"{exchange}_{inst_type}_{symbol}_{bar}_"
         
         months = []

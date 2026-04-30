@@ -4,8 +4,6 @@ from typing import Optional
 class Config:
     # 数据配置
     DATA_PATH = os.getenv("DATA_PATH", "./data")
-    TRAIN_DATA_PATH = os.getenv("TRAIN_DATA_PATH", os.path.join(DATA_PATH, "train"))
-    TEST_DATA_PATH = os.getenv("TEST_DATA_PATH", os.path.join(DATA_PATH, "test"))
     
     # 模型配置
     MODEL_NAME = os.getenv("MODEL_NAME", "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B")
@@ -57,7 +55,6 @@ class Config:
     # 实时分析配置
     REALTIME_INTERVAL_1M = int(os.getenv("REALTIME_INTERVAL_1M", "60"))
     REALTIME_INTERVAL_15M = int(os.getenv("REALTIME_INTERVAL_15M", "900"))
-    REALTIME_DATA_PATH = os.getenv("REALTIME_DATA_PATH", os.path.join(DATA_PATH, "realtime"))
     REALTIME_USE_LLM = os.getenv("REALTIME_USE_LLM", "true").lower() == "true"
     REALTIME_SIMULATE_TRADE = os.getenv("REALTIME_SIMULATE_TRADE", "false").lower() == "true"
     
@@ -76,8 +73,5 @@ class Config:
     @classmethod
     def create_directories(cls):
         os.makedirs(cls.DATA_PATH, exist_ok=True)
-        os.makedirs(cls.TRAIN_DATA_PATH, exist_ok=True)
-        os.makedirs(cls.TEST_DATA_PATH, exist_ok=True)
         os.makedirs(cls.CHECKPOINT_PATH, exist_ok=True)
-        os.makedirs(cls.REALTIME_DATA_PATH, exist_ok=True)
         os.makedirs(cls.LOG_PATH, exist_ok=True)

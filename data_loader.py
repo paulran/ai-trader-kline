@@ -59,7 +59,7 @@ class DataLoader:
         
         return df
     
-    def load_training_data(self) -> List[pd.DataFrame]:
+    def load_training_data(self, start_time: int = None, end_time: int = None) -> List[pd.DataFrame]:
         data_frames = []
         
         exchange = self.config.EXCHANGE
@@ -70,7 +70,9 @@ class DataLoader:
             exchange=exchange,
             inst_type=inst_type,
             symbol=symbol,
-            bar='1m'
+            bar='1m',
+            start_time=start_time,
+            end_time=end_time
         )
         
         if not sqlite_df.empty:
@@ -82,22 +84,13 @@ class DataLoader:
                 logger.warning(f"警告: 无法处理SQLite数据: {e}")
         
         if not data_frames:
-            train_path = Path(self.config.TRAIN_DATA_PATH)
-            for file_path in train_path.glob('*.csv'):
-                try:
-                    df = self.load_csv_file(str(file_path))
-                    data_frames.append(df)
-                except Exception as e:
-                    logger.warning(f"警告: 无法加载文件 {file_path}: {e}")
-        
-        if not data_frames:
-            logger.warning("警告: 训练数据目录中没有找到有效的数据文件，将生成示例数据")
+            logger.warning("警告: SQLite中没有找到有效的数据，将生成示例数据")
             sample_df = self.generate_sample_data()
             data_frames.append(sample_df)
         
         return data_frames
     
-    def load_testing_data(self) -> List[pd.DataFrame]:
+    def load_testing_data(self, start_time: int = None, end_time: int = None) -> List[pd.DataFrame]:
         data_frames = []
         
         exchange = self.config.EXCHANGE
@@ -108,7 +101,9 @@ class DataLoader:
             exchange=exchange,
             inst_type=inst_type,
             symbol=symbol,
-            bar='1m'
+            bar='1m',
+            start_time=start_time,
+            end_time=end_time
         )
         
         if not sqlite_df.empty:
@@ -120,16 +115,7 @@ class DataLoader:
                 logger.warning(f"警告: 无法处理SQLite数据: {e}")
         
         if not data_frames:
-            test_path = Path(self.config.TEST_DATA_PATH)
-            for file_path in test_path.glob('*.csv'):
-                try:
-                    df = self.load_csv_file(str(file_path))
-                    data_frames.append(df)
-                except Exception as e:
-                    logger.warning(f"警告: 无法加载文件 {file_path}: {e}")
-        
-        if not data_frames:
-            logger.warning("警告: 测试数据目录中没有找到有效的数据文件，将生成示例数据")
+            logger.warning("警告: SQLite中没有找到有效的数据，将生成示例数据")
             sample_df = self.generate_sample_data()
             data_frames.append(sample_df)
         
