@@ -282,6 +282,12 @@ class SQLiteKlineStore:
 
 
 class SignalStore:
+    ACTION_BUY = 0
+    ACTION_SELL = 2
+    
+    ACTION_TO_INT = {'Buy': 0, 'Sell': 2}
+    INT_TO_ACTION = {0: 'Buy', 2: 'Sell'}
+    
     def __init__(self, config: Config = None):
         self.config = config or Config()
         self.config.create_directories()
@@ -301,30 +307,12 @@ class SignalStore:
         
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS signals (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                kline_time INTEGER NOT NULL,
-                action TEXT NOT NULL,
-                open_price REAL NOT NULL,
-                high_price REAL NOT NULL,
-                low_price REAL NOT NULL,
-                close_price REAL NOT NULL,
-                volume REAL NOT NULL,
-                amount REAL DEFAULT 0,
-                rl_action TEXT,
-                rl_q_values TEXT,
-                llm_action TEXT,
-                llm_confidence REAL,
-                llm_analysis TEXT,
-                llm_risk_assessment TEXT,
-                llm_reason TEXT,
-                combination_reason TEXT,
-                previous_action TEXT,
+                kline_time INTEGER PRIMARY KEY,
+                action INTEGER NOT NULL,
+                confidence REAL NOT NULL,
+                remark TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
-        ''')
-        
-        cursor.execute('''
-            CREATE INDEX IF NOT EXISTS idx_kline_time ON signals(kline_time)
         ''')
         
         cursor.execute('''
@@ -335,15 +323,9 @@ class SignalStore:
         conn.close()
     
     def insert_signal(self, exchange: str, inst_type: str, symbol: str, bar: str,
-                      kline_time: int, action: str,
-                      open_price: float, high_price: float, low_price: float, 
-                      close_price: float, volume: float, amount: float = 0,
-                      rl_action: str = None, rl_q_values: List[float] = None,
-                      llm_action: str = None, llm_confidence: float = None,
-                      llm_analysis: str = None, llm_risk_assessment: str = None,
-                      llm_reason: str = None, combination_reason: str = None,
-                      previous_action: str = None) -> bool:
-        if action not in ["Buy", "Sell"]:
+                      kline_time: int, action: int,
+                      confidence: float, remark: str = None) -> bool:
+        if action not in [self.ACTION_BUY, self.ACTION_SELL]:
             return False
         
         year_month = self._get_year_month_from_timestamp(kline_time)
@@ -355,29 +337,18 @@ class SignalStore:
             conn = sqlite3.connect(db_path)
             cursor = conn.cursor()
             
-            rl_q_values_str = str(rl_q_values) if rl_q_values else None
-            
             cursor.execute('''
-                INSERT INTO signals (
-                    kline_time, action, 
-                    open_price, high_price, low_price, close_price, volume, amount,
-                    rl_action, rl_q_values,
-                    llm_action, llm_confidence, llm_analysis, llm_risk_assessment, llm_reason,
-                    combination_reason, previous_action
+                INSERT OR REPLACE INTO signals (
+                    kline_time, action, confidence, remark
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                kline_time, action,
-                open_price, high_price, low_price, close_price, volume, amount,
-                rl_action, rl_q_values_str,
-                llm_action, llm_confidence, llm_analysis, llm_risk_assessment, llm_reason,
-                combination_reason, previous_action
-            ))
+                VALUES (?, ?, ?, ?)
+            ''', (kline_time, action, confidence, remark))
             
             conn.commit()
             conn.close()
             
-            logger.info(f"已保存交易信号: {action} @ {datetime.fromtimestamp(kline_time).strftime('%Y-%m-%d %H:%M:%S')}")
+            action_name = self.INT_TO_ACTION.get(action, 'Unknown')
+            logger.info(f"已保存交易信号: {action_name} @ {datetime.fromtimestamp(kline_time).strftime('%Y-%m-%d %H:%M:%S')}, confidence={confidence:.2f}")
             return True
             
         except Exception as e:
@@ -386,7 +357,7 @@ class SignalStore:
     
     def load_signals(self, exchange: str, inst_type: str, symbol: str, bar: str,
                      start_time: int = None, end_time: int = None,
-                     action: str = None,
+                     action: int = None,
                      year_months: List[str] = None) -> pd.DataFrame:
         if year_months is None:
             if start_time is not None and end_time is not None:
@@ -408,11 +379,7 @@ class SignalStore:
                 conn = sqlite3.connect(db_path)
                 
                 query = """
-                    SELECT id, kline_time, action, 
-                           open_price, high_price, low_price, close_price, volume, amount,
-                           rl_action, rl_q_values,
-                           llm_action, llm_confidence, llm_analysis, llm_risk_assessment, llm_reason,
-                           combination_reason, previous_action, created_at
+                    SELECT kline_time, action, confidence, remark, created_at
                     FROM signals
                 """
                 conditions = []
@@ -480,6 +447,6 @@ class SignalStore:
     
     def get_signal_count(self, exchange: str, inst_type: str, symbol: str, bar: str,
                          start_time: int = None, end_time: int = None,
-                         action: str = None) -> int:
+                         action: int = None) -> int:
         df = self.load_signals(exchange, inst_type, symbol, bar, start_time, end_time, action)
         return len(df)

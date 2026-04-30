@@ -511,28 +511,61 @@ class RealtimeAnalyzer:
                 logger.warning(f"无法解析时间格式: {time_str}")
                 return
         
-        open_price = kline_info.get('open', 0)
-        high_price = kline_info.get('high', 0)
-        low_price = kline_info.get('low', 0)
-        close_price = kline_info.get('close', 0)
-        volume = kline_info.get('volume', 0)
-        amount = kline_info.get('amount', 0)
+        final_decision = result.get('final_decision', {})
+        combination_info = final_decision.get('combination_info')
+        
+        confidence = 0.5
+        if combination_info and 'vote_weights' in combination_info:
+            vote_weights = combination_info['vote_weights']
+            confidence = vote_weights.get(current_action, 0.5)
+        else:
+            llm_analysis = result.get('llm_analysis')
+            if llm_analysis:
+                confidence = llm_analysis.get('confidence', 0.5)
+            else:
+                rl_prediction = result.get('rl_prediction')
+                if rl_prediction:
+                    q_values = rl_prediction.get('q_values', [])
+                    if q_values and len(q_values) == 3:
+                        action_int = {'Buy': 0, 'Hold': 1, 'Sell': 2}.get(current_action, 1)
+                        if 0 <= action_int < len(q_values):
+                            q_total = sum(abs(q) for q in q_values)
+                            if q_total > 0:
+                                confidence = abs(q_values[action_int]) / q_total
+        
+        remark_parts = []
         
         rl_prediction = result.get('rl_prediction')
-        rl_action = rl_prediction.get('action') if rl_prediction else None
-        rl_q_values = rl_prediction.get('q_values') if rl_prediction else None
+        if rl_prediction:
+            rl_action = rl_prediction.get('action')
+            rl_q_values = rl_prediction.get('q_values', [])
+            remark_parts.append(f"[RL] action={rl_action}, q_values={rl_q_values}")
         
         llm_analysis = result.get('llm_analysis')
-        llm_action = llm_analysis.get('recommended_action') if llm_analysis else None
-        llm_confidence = llm_analysis.get('confidence') if llm_analysis else None
-        llm_analysis_text = llm_analysis.get('analysis') if llm_analysis else None
-        llm_risk_assessment = llm_analysis.get('risk_assessment') if llm_analysis else None
-        llm_reason = llm_analysis.get('reason') if llm_analysis else None
+        if llm_analysis:
+            llm_action = llm_analysis.get('recommended_action')
+            llm_conf = llm_analysis.get('confidence', 0.5)
+            llm_analysis_text = llm_analysis.get('analysis', '')
+            llm_reason = llm_analysis.get('reason', '')
+            remark_parts.append(f"[LLM] action={llm_action}, confidence={llm_conf:.2f}")
+            if llm_analysis_text:
+                remark_parts.append(f"[LLM Analysis] {llm_analysis_text}")
+            if llm_reason:
+                remark_parts.append(f"[LLM Reason] {llm_reason}")
         
-        combination_reason = None
-        if final_decision := result.get('final_decision'):
-            if combination_info := final_decision.get('combination_info'):
-                combination_reason = combination_info.get('combination_reason')
+        if combination_info:
+            vote_weights = combination_info.get('vote_weights', {})
+            combination_reason = combination_info.get('combination_reason', '')
+            remark_parts.append(f"[Vote] Buy={vote_weights.get('Buy', 0):.2f}, Hold={vote_weights.get('Hold', 0):.2f}, Sell={vote_weights.get('Sell', 0):.2f}")
+            if combination_reason:
+                remark_parts.append(f"[Combination] {combination_reason.strip()}")
+        
+        if self.last_final_decision:
+            remark_parts.append(f"[Previous] {self.last_final_decision}")
+        
+        remark = "\n".join(remark_parts)
+        
+        action_int = 0 if current_action == "Buy" else 2
         
         self.signal_store.insert_signal(
             exchange=self.config.EXCHANGE,
@@ -540,22 +573,9 @@ class RealtimeAnalyzer:
             symbol=self.config.OKX_INST_ID,
             bar=self.bar,
             kline_time=kline_time,
-            action=current_action,
-            open_price=open_price,
-            high_price=high_price,
-            low_price=low_price,
-            close_price=close_price,
-            volume=volume,
-            amount=amount,
-            rl_action=rl_action,
-            rl_q_values=rl_q_values,
-            llm_action=llm_action,
-            llm_confidence=llm_confidence,
-            llm_analysis=llm_analysis_text,
-            llm_risk_assessment=llm_risk_assessment,
-            llm_reason=llm_reason,
-            combination_reason=combination_reason,
-            previous_action=self.last_final_decision
+            action=action_int,
+            confidence=confidence,
+            remark=remark
         )
     
     def start(self, use_llm: bool = True, save_data: bool = True, 
