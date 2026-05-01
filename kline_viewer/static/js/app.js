@@ -301,8 +301,8 @@ function initCharts() {
             timeScale: {
                 visible: false
             },
-            handleScroll: true,
-            handleScale: true
+            handleScroll: false,
+            handleScale: false
         });
 
         indicatorChart = LightweightCharts.createChart(indicatorChartEl, {
@@ -320,8 +320,8 @@ function initCharts() {
             timeScale: {
                 visible: false
             },
-            handleScroll: true,
-            handleScale: true
+            handleScroll: false,
+            handleScale: false
         });
 
         candlestickSeries = mainChart.addCandlestickSeries({
@@ -365,10 +365,69 @@ const LOAD_COOLDOWN = 500;
 
 function onTimeRangeChanged() {
     try {
-        const timeRange = mainChart.timeScale().getVisibleRange();
-        if (timeRange) {
-            volumeChart.timeScale().setVisibleRange(timeRange);
-            indicatorChart.timeScale().setVisibleRange(timeRange);
+        const mainTimeRange = mainChart.timeScale().getVisibleRange();
+        
+        if (!mainTimeRange) {
+            return;
+        }
+
+        const from = mainTimeRange.from;
+        const to = mainTimeRange.to;
+
+        if (typeof from !== 'number' || typeof to !== 'number') {
+            return;
+        }
+
+        try {
+            volumeChart.timeScale().setVisibleRange({ from: from, to: to });
+            indicatorChart.timeScale().setVisibleRange({ from: from, to: to });
+        } catch (syncError) {
+            console.warn('同步时间范围失败:', syncError);
+        }
+
+        if (currentData.length > 0 && !isLoadingData) {
+            const now = Date.now();
+            if (now - lastLoadTime < LOAD_COOLDOWN) {
+                return;
+            }
+
+            const firstDataTime = currentData[0].time;
+            const lastDataTime = currentData[currentData.length - 1].time;
+
+            const period = document.getElementById('period').value;
+            let barSeconds;
+            switch (period) {
+                case '1m': barSeconds = 60; break;
+                case '5m': barSeconds = 5 * 60; break;
+                case '15m': barSeconds = 15 * 60; break;
+                case '1h': barSeconds = 60 * 60; break;
+                case '4h': barSeconds = 4 * 60 * 60; break;
+                case '1d': barSeconds = 24 * 60 * 60; break;
+                default: barSeconds = 60;
+            }
+
+            const thresholdBars = 50;
+            const thresholdSeconds = thresholdBars * barSeconds;
+
+            let needLoadBefore = false;
+            let needLoadAfter = false;
+
+            if (from <= firstDataTime + thresholdSeconds) {
+                needLoadBefore = true;
+                console.log('需要加载更早数据: visibleFrom=' + 
+                    new Date(from * 1000).toLocaleString() + 
+                    ', firstDataTime=' + new Date(firstDataTime * 1000).toLocaleString());
+            }
+            if (to >= lastDataTime - thresholdSeconds) {
+                needLoadAfter = true;
+                console.log('需要加载更晚数据: visibleTo=' + 
+                    new Date(to * 1000).toLocaleString() + 
+                    ', lastDataTime=' + new Date(lastDataTime * 1000).toLocaleString());
+            }
+
+            if (needLoadBefore || needLoadAfter) {
+                loadMoreData(needLoadBefore, needLoadAfter);
+            }
         }
 
         if (currentData.length > 0 && !isLoadingData) {
@@ -399,6 +458,111 @@ function onTimeRangeChanged() {
             }
         }
     } catch (e) {
+        console.error('onTimeRangeChanged error:', e);
+    }
+}
+
+async function loadMoreData(loadBefore, loadAfter) {
+    if (isLoadingData || currentData.length === 0) {
+        return;
+    }
+
+    isLoadingData = true;
+    lastLoadTime = Date.now();
+
+    const exchange = document.getElementById('exchange').value;
+    const instType = document.getElementById('instType').value;
+    const symbol = document.getElementById('symbol').value;
+    const period = document.getElementById('period').value;
+
+    const firstDataTime = currentData[0].time;
+    const lastDataTime = currentData[currentData.length - 1].time;
+
+    let url = `/api/klines?exchange=${exchange}&type=${instType}&symbol=${encodeURIComponent(symbol)}&period=${period}`;
+
+    if (loadBefore) {
+        const beforeTime = firstDataTime - 24 * 60 * 60;
+        url += `&end_time=${firstDataTime - 1}&start_time=${beforeTime}`;
+    } else if (loadAfter) {
+        const afterTime = lastDataTime + 24 * 60 * 60;
+        url += `&start_time=${lastDataTime + 1}&end_time=${afterTime}`;
+    }
+
+    try {
+        console.log('请求更多数据:', url);
+        const response = await fetch(url);
+
+        if (!response.ok) {
+            throw new Error(`HTTP错误: ${response.status}`);
+        }
+
+        const result = await response.json();
+
+        if (result.success && result.data && result.data.length > 0) {
+            const newData = result.data;
+            const newSignals = result.signals || [];
+
+            let mergedData = [...currentData];
+            let mergedSignals = [...currentSignals];
+
+            if (loadBefore) {
+                const existingTimes = new Set(currentData.map(d => d.time));
+                const newDataToAdd = newData.filter(d => !existingTimes.has(d.time));
+                mergedData = [...newDataToAdd, ...currentData];
+            } else {
+                const existingTimes = new Set(currentData.map(d => d.time));
+                const newDataToAdd = newData.filter(d => !existingTimes.has(d.time));
+                mergedData = [...currentData, ...newDataToAdd];
+            }
+
+            const existingSignalTimes = new Set(currentSignals.map(s => s.time));
+            const newSignalsToAdd = newSignals.filter(s => !existingSignalTimes.has(s.time));
+            mergedSignals = [...currentSignals, ...newSignalsToAdd];
+
+            mergedData.sort((a, b) => a.time - b.time);
+            mergedSignals.sort((a, b) => a.time - b.time);
+
+            currentData = mergedData;
+            currentSignals = mergedSignals;
+            currentIndicators = calculateAllIndicators(currentData);
+
+            klineTimeMap.clear();
+            currentData.forEach(kline => {
+                klineTimeMap.set(kline.time, kline);
+            });
+
+            signalTimeMap.clear();
+            currentSignals.forEach(signal => {
+                signalTimeMap.set(signal.time, signal);
+            });
+
+            if (currentData.length > 0) {
+                currentDataTimeMin = currentData[0].time;
+                currentDataTimeMax = currentData[currentData.length - 1].time;
+            }
+
+            candlestickSeries.setData(currentData);
+
+            const volumeData = currentData.map(d => ({
+                time: d.time,
+                value: d.volume,
+                color: d.close >= d.open ? chartColors.up : chartColors.down
+            }));
+            volumeSeries.setData(volumeData);
+
+            createSignalMarkers();
+
+            updateMainChartIndicators();
+            updateIndicators();
+
+            console.log('已合并更多数据，总数据量:', currentData.length);
+            document.getElementById('dataInfo').textContent = 
+                `数据: ${exchange} | ${symbol} | ${period} | ${currentData.length} 条K线 | ${currentSignals.length} 个信号`;
+        }
+    } catch (error) {
+        console.error('加载更多数据失败:', error);
+    } finally {
+        isLoadingData = false;
     }
 }
 
@@ -589,17 +753,30 @@ function onCrosshairMove(param) {
     if (!param.time || !param.point) {
         hideTooltip();
         hideSignalPopup();
+        lastTooltipTime = null;
         return;
     }
 
-    const klineData = currentData.find(d => d.time === param.time);
+    const klineData = klineTimeMap.get(param.time);
     if (!klineData) {
         hideTooltip();
         hideSignalPopup();
+        lastTooltipTime = null;
         return;
     }
 
-    const signal = currentSignals.find(s => s.time === param.time);
+    const signal = signalTimeMap.get(param.time);
+
+    const chartRect = document.getElementById('mainChart').getBoundingClientRect();
+    const x = chartRect.left + param.point.x;
+    const y = chartRect.top + param.point.y;
+
+    if (lastTooltipTime === param.time) {
+        showTooltip(currentTooltipContent, x, y);
+        return;
+    }
+
+    lastTooltipTime = param.time;
 
     let tooltipHtml = `
         <div class="title">${formatTime(param.time)}</div>
@@ -648,10 +825,6 @@ function onCrosshairMove(param) {
             `;
         }
     }
-
-    const chartRect = document.getElementById('mainChart').getBoundingClientRect();
-    const x = chartRect.left + param.point.x;
-    const y = chartRect.top + param.point.y;
 
     showTooltip(tooltipHtml, x, y);
 }
