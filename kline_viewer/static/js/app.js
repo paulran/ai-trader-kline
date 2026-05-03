@@ -343,6 +343,7 @@ function initCharts() {
             }
         });
 
+        mainChart.timeScale().subscribeVisibleLogicalRangeChange(onLogicalRangeChanged);
         mainChart.timeScale().subscribeVisibleTimeRangeChange(onTimeRangeChanged);
 
         const resizeObserver = new ResizeObserver(() => {
@@ -367,8 +368,38 @@ function initCharts() {
 let lastLoadTime = 0;
 const LOAD_COOLDOWN = 1500;
 
+function onLogicalRangeChanged(logicalRange) {
+    try {
+        if (!logicalRange) {
+            return;
+        }
+
+        if (volumeChart) {
+            try {
+                volumeChart.timeScale().setVisibleLogicalRange(logicalRange);
+            } catch (syncError) {
+                console.warn('同步成交量图表逻辑范围失败:', syncError);
+            }
+        }
+
+        if (indicatorChart && Object.keys(indicatorSeriesMap).length > 0) {
+            try {
+                indicatorChart.timeScale().setVisibleLogicalRange(logicalRange);
+            } catch (syncError) {
+                console.warn('同步指标图表逻辑范围失败:', syncError);
+            }
+        }
+    } catch (e) {
+        console.error('onLogicalRangeChanged error:', e);
+    }
+}
+
 function onTimeRangeChanged() {
     try {
+        if (!mainChart) {
+            return;
+        }
+
         const mainTimeRange = mainChart.timeScale().getVisibleRange();
         
         if (!mainTimeRange) {
@@ -378,15 +409,9 @@ function onTimeRangeChanged() {
         const from = mainTimeRange.from;
         const to = mainTimeRange.to;
 
-        if (typeof from !== 'number' || typeof to !== 'number') {
+        if (typeof from !== 'number' || typeof to !== 'number' ||
+            isNaN(from) || isNaN(to) || !isFinite(from) || !isFinite(to)) {
             return;
-        }
-
-        try {
-            volumeChart.timeScale().setVisibleRange({ from: from, to: to });
-            indicatorChart.timeScale().setVisibleRange({ from: from, to: to });
-        } catch (syncError) {
-            console.warn('同步时间范围失败:', syncError);
         }
 
         if (currentData.length > 0 && !isLoadingData) {
@@ -517,14 +542,14 @@ async function loadMoreData(loadBefore, loadAfter) {
                 currentDataTimeMax = currentData[currentData.length - 1].time;
             }
 
-            candlestickSeries.setData(currentData);
-
             const volumeData = currentData.map(d => ({
                 time: d.time,
                 value: d.volume,
                 color: d.close >= d.open ? chartColors.up : chartColors.down
             }));
+
             volumeSeries.setData(volumeData);
+            candlestickSeries.setData(currentData);
 
             createSignalMarkers();
 
@@ -1046,14 +1071,14 @@ async function loadData() {
             return;
         }
 
-        candlestickSeries.setData(currentData);
-
         const volumeData = currentData.map(d => ({
             time: d.time,
             value: d.volume,
             color: d.close >= d.open ? chartColors.up : chartColors.down
         }));
+
         volumeSeries.setData(volumeData);
+        candlestickSeries.setData(currentData);
 
         createSignalMarkers();
 
