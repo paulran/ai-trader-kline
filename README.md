@@ -126,6 +126,11 @@ python main.py --mode realtime --bar 1m
 python main.py --mode realtime --bar 15m
 ```
 
+**多时间周期模式（同时分析1分钟和15分钟K线）**：
+```bash
+python main.py --mode realtime --multi
+```
+
 **自定义刷新间隔**（例如120秒）：
 ```bash
 python main.py --mode realtime --bar 1m --interval 120

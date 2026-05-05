@@ -186,6 +186,149 @@ MACD状态: {'金叉' if macd > signal else '死叉'}
         
         return price_summary
     
+    def _generate_prompt_from_multi_timeframe(self, kline_data_1m: pd.DataFrame, 
+                                              kline_data_15m: pd.DataFrame,
+                                              recent_actions: List[str] = None,
+                                              portfolio_info: Dict = None) -> str:
+        if len(kline_data_1m) == 0 or len(kline_data_15m) == 0:
+            return "没有可用的K线数据"
+        
+        latest_1m = kline_data_1m.iloc[-1]
+        latest_15m = kline_data_15m.iloc[-1]
+        
+        prev_1m = kline_data_1m.iloc[-2] if len(kline_data_1m) >= 2 else latest_1m
+        prev_15m = kline_data_15m.iloc[-2] if len(kline_data_15m) >= 2 else latest_15m
+        
+        recent_window_1m = min(len(kline_data_1m), 10)
+        recent_data_1m = kline_data_1m.tail(recent_window_1m)
+        
+        recent_window_15m = min(len(kline_data_15m), 5)
+        recent_data_15m = kline_data_15m.tail(recent_window_15m)
+        
+        price_summary = f"""
+【多时间周期K线分析】
+
+=== 1分钟K线数据 ===
+最新K线:
+时间: {latest_1m['Time']}
+开盘价: {latest_1m['Open']:.2f}
+最高价: {latest_1m['High']:.2f}
+最低价: {latest_1m['Low']:.2f}
+收盘价: {latest_1m['Close']:.2f}
+成交量: {latest_1m['Volume']:,}
+
+价格变化（相比前一根1分钟K线）:
+开盘变化: {((latest_1m['Open'] - prev_1m['Open']) / prev_1m['Open'] * 100) if prev_1m['Open'] > 0 else 0:.2f}%
+收盘变化: {((latest_1m['Close'] - prev_1m['Close']) / prev_1m['Close'] * 100) if prev_1m['Close'] > 0 else 0:.2f}%
+
+"""
+        
+        if 'SMA_5' in kline_data_1m.columns:
+            sma5 = latest_1m.get('SMA_5', 0)
+            sma10 = latest_1m.get('SMA_10', 0)
+            sma20 = latest_1m.get('SMA_20', 0)
+            rsi = latest_1m.get('RSI', 50)
+            price_summary += f"""
+1分钟技术指标:
+SMA_5: {sma5:.2f}
+SMA_10: {sma10:.2f}
+SMA_20: {sma20:.2f}
+RSI: {rsi:.2f} ({'超买' if rsi > 70 else '超卖' if rsi < 30 else '中性'})
+当前价格与SMA_5关系: {'高于' if latest_1m['Close'] > sma5 else '低于'}
+"""
+        
+        recent_prices_1m = [f"[{i+1}] O:{row['Open']:.2f} H:{row['High']:.2f} L:{row['Low']:.2f} C:{row['Close']:.2f} V:{row['Volume']:,}"
+                           for i, (_, row) in enumerate(recent_data_1m.iterrows())]
+        
+        price_summary += f"""
+最近{recent_window_1m}根1分钟K线:
+{chr(10).join(recent_prices_1m)}
+
+"""
+        
+        price_summary += f"""
+=== 15分钟K线数据 ===
+最新K线:
+时间: {latest_15m['Time']}
+开盘价: {latest_15m['Open']:.2f}
+最高价: {latest_15m['High']:.2f}
+最低价: {latest_15m['Low']:.2f}
+收盘价: {latest_15m['Close']:.2f}
+成交量: {latest_15m['Volume']:,}
+
+价格变化（相比前一根15分钟K线）:
+开盘变化: {((latest_15m['Open'] - prev_15m['Open']) / prev_15m['Open'] * 100) if prev_15m['Open'] > 0 else 0:.2f}%
+收盘变化: {((latest_15m['Close'] - prev_15m['Close']) / prev_15m['Close'] * 100) if prev_15m['Close'] > 0 else 0:.2f}%
+
+"""
+        
+        if 'SMA_5' in kline_data_15m.columns:
+            sma5_15m = latest_15m.get('SMA_5', 0)
+            sma10_15m = latest_15m.get('SMA_10', 0)
+            sma20_15m = latest_15m.get('SMA_20', 0)
+            rsi_15m = latest_15m.get('RSI', 50)
+            price_summary += f"""
+15分钟技术指标:
+SMA_5: {sma5_15m:.2f}
+SMA_10: {sma10_15m:.2f}
+SMA_20: {sma20_15m:.2f}
+RSI: {rsi_15m:.2f} ({'超买' if rsi_15m > 70 else '超卖' if rsi_15m < 30 else '中性'})
+当前价格与SMA_5关系: {'高于' if latest_15m['Close'] > sma5_15m else '低于'}
+"""
+        
+        recent_prices_15m = [f"[{i+1}] O:{row['Open']:.2f} H:{row['High']:.2f} L:{row['Low']:.2f} C:{row['Close']:.2f} V:{row['Volume']:,}"
+                            for i, (_, row) in enumerate(recent_data_15m.iterrows())]
+        
+        price_summary += f"""
+最近{recent_window_15m}根15分钟K线:
+{chr(10).join(recent_prices_15m)}
+
+"""
+        
+        if recent_actions:
+            price_summary += f"""
+=== 操作历史 ===
+最近操作: {', '.join(recent_actions[-5:])}
+
+"""
+        
+        if portfolio_info:
+            price_summary += f"""
+=== 投资组合信息 ===
+当前持仓: {portfolio_info.get('shares_held', 0)} 股
+平均成本: {portfolio_info.get('avg_cost', 0):.2f}
+当前余额: {portfolio_info.get('balance', 0):.2f}
+
+"""
+        
+        price_summary += f"""
+=== 分析要求 ===
+请综合分析1分钟和15分钟两个时间周期的K线数据，判断当前适合的操作策略。
+
+分析要点:
+1. 比较两个时间周期的趋势方向是否一致
+2. 分析短期（1分钟）和中期（15分钟）的技术指标信号
+3. 判断是否存在背离或共振信号
+4. 综合考虑给出操作建议
+
+你的回答需要包含:
+1. 技术分析结论（综合两个时间周期的趋势判断、支撑压力位等）
+2. 风险评估
+3. 推荐的操作: Buy（买入）、Hold（持有）、Sell（卖出）
+4. 操作理由
+
+请以JSON格式返回，格式如下:
+{{
+    "analysis": "技术分析结论",
+    "risk_assessment": "风险评估",
+    "recommended_action": "Buy/Hold/Sell",
+    "reason": "操作理由",
+    "confidence": 0.0-1.0之间的置信度
+}}
+"""
+        
+        return price_summary
+    
     def analyze_kline(self, kline_data: pd.DataFrame, 
                       recent_actions: List[str] = None,
                       portfolio_info: Dict = None) -> Dict:
@@ -200,6 +343,151 @@ MACD状态: {'金叉' if macd > signal else '死叉'}
         
         else:
             return self._rule_based_analysis(kline_data)
+    
+    def analyze_kline_multi_timeframe(self, kline_data_1m: pd.DataFrame, 
+                                       kline_data_15m: pd.DataFrame,
+                                       recent_actions: List[str] = None,
+                                       portfolio_info: Dict = None) -> Dict:
+        prompt = self._generate_prompt_from_multi_timeframe(kline_data_1m, kline_data_15m, 
+                                                             recent_actions, portfolio_info)
+        
+        if self.use_api and self.config.DEEPSEEK_API_KEY:
+            response = self._call_deepseek_api(prompt)
+            return self._parse_llm_response(response)
+        
+        elif self.model is not None and self.tokenizer is not None:
+            return self._analyze_with_local_model(prompt)
+        
+        else:
+            return self._rule_based_analysis_multi_timeframe(kline_data_1m, kline_data_15m)
+    
+    def _rule_based_analysis_multi_timeframe(self, kline_data_1m: pd.DataFrame, 
+                                              kline_data_15m: pd.DataFrame) -> Dict:
+        if len(kline_data_1m) < 5 or len(kline_data_15m) < 5:
+            return {
+                "analysis": "数据不足，无法进行有效分析",
+                "risk_assessment": "未知",
+                "recommended_action": "Hold",
+                "reason": "历史数据不足5根K线，建议等待更多数据",
+                "confidence": 0.3
+            }
+        
+        latest_1m = kline_data_1m.iloc[-1]
+        latest_15m = kline_data_15m.iloc[-1]
+        
+        closes_1m = kline_data_1m['Close'].values
+        closes_15m = kline_data_15m['Close'].values
+        
+        short_ma_1m = closes_1m[-5:].mean() if len(closes_1m) >= 5 else closes_1m.mean()
+        long_ma_1m = closes_1m[-20:].mean() if len(closes_1m) >= 20 else closes_1m.mean()
+        current_price_1m = closes_1m[-1]
+        
+        short_ma_15m = closes_15m[-5:].mean() if len(closes_15m) >= 5 else closes_15m.mean()
+        long_ma_15m = closes_15m[-20:].mean() if len(closes_15m) >= 20 else closes_15m.mean()
+        current_price_15m = closes_15m[-1]
+        
+        rsi_1m = latest_1m.get('RSI', 50) if 'RSI' in kline_data_1m.columns else 50
+        rsi_15m = latest_15m.get('RSI', 50) if 'RSI' in kline_data_15m.columns else 50
+        
+        signals = {
+            'ma_signal_1m': 0,
+            'ma_signal_15m': 0,
+            'rsi_signal_1m': 0,
+            'rsi_signal_15m': 0,
+            'trend_agreement': 0
+        }
+        
+        if current_price_1m > short_ma_1m > long_ma_1m:
+            signals['ma_signal_1m'] = 1
+        elif current_price_1m < short_ma_1m < long_ma_1m:
+            signals['ma_signal_1m'] = -1
+        
+        if current_price_15m > short_ma_15m > long_ma_15m:
+            signals['ma_signal_15m'] = 1
+        elif current_price_15m < short_ma_15m < long_ma_15m:
+            signals['ma_signal_15m'] = -1
+        
+        if rsi_1m < 30:
+            signals['rsi_signal_1m'] = 1
+        elif rsi_1m > 70:
+            signals['rsi_signal_1m'] = -1
+        
+        if rsi_15m < 30:
+            signals['rsi_signal_15m'] = 1
+        elif rsi_15m > 70:
+            signals['rsi_signal_15m'] = -1
+        
+        if signals['ma_signal_1m'] == signals['ma_signal_15m'] != 0:
+            signals['trend_agreement'] = 1
+        elif signals['ma_signal_1m'] != 0 and signals['ma_signal_15m'] != 0 and signals['ma_signal_1m'] != signals['ma_signal_15m']:
+            signals['trend_agreement'] = -1
+        
+        total_signal = sum([
+            signals['ma_signal_1m'],
+            signals['ma_signal_15m'],
+            signals['rsi_signal_1m'],
+            signals['rsi_signal_15m'],
+            signals['trend_agreement'] * 2
+        ])
+        
+        max_possible = 6
+        confidence = (abs(total_signal) / max_possible) * 0.5 + 0.3
+        
+        analysis_parts = []
+        risk = "中等风险"
+        reason = ""
+        
+        if signals['trend_agreement'] == 1:
+            analysis_parts.append("两个时间周期趋势方向一致")
+        elif signals['trend_agreement'] == -1:
+            analysis_parts.append("两个时间周期趋势方向不一致")
+        
+        if signals['ma_signal_1m'] == 1:
+            analysis_parts.append("1分钟均线呈多头排列")
+        elif signals['ma_signal_1m'] == -1:
+            analysis_parts.append("1分钟均线呈空头排列")
+        
+        if signals['ma_signal_15m'] == 1:
+            analysis_parts.append("15分钟均线呈多头排列")
+        elif signals['ma_signal_15m'] == -1:
+            analysis_parts.append("15分钟均线呈空头排列")
+        
+        if signals['rsi_signal_1m'] == 1:
+            analysis_parts.append("1分钟RSI处于超卖区域")
+        elif signals['rsi_signal_1m'] == -1:
+            analysis_parts.append("1分钟RSI处于超买区域")
+        
+        if signals['rsi_signal_15m'] == 1:
+            analysis_parts.append("15分钟RSI处于超卖区域")
+        elif signals['rsi_signal_15m'] == -1:
+            analysis_parts.append("15分钟RSI处于超买区域")
+        
+        if total_signal >= 3:
+            action = 'Buy'
+            analysis = "多个技术指标显示买入信号：" + "; ".join(analysis_parts)
+            risk = "中低风险，建议关注成交量配合"
+            reason = "综合1分钟和15分钟时间周期分析，当前市场趋势偏多，适合买入"
+        
+        elif total_signal <= -3:
+            action = 'Sell'
+            analysis = "多个技术指标显示卖出信号：" + "; ".join(analysis_parts)
+            risk = "中高风险，注意风险控制"
+            reason = "综合1分钟和15分钟时间周期分析，当前市场趋势偏空，建议卖出"
+        
+        else:
+            action = 'Hold'
+            analysis = "技术指标信号不一致，" + "; ".join(analysis_parts) if analysis_parts else "技术指标信号不一致，市场处于震荡或方向不明朗阶段"
+            risk = "中等风险，建议观望"
+            reason = "多空信号相互抵消或时间周期信号不一致，建议等待更明确的信号"
+        
+        return {
+            "analysis": analysis,
+            "risk_assessment": risk,
+            "recommended_action": action,
+            "reason": reason,
+            "confidence": confidence,
+            "signals": signals
+        }
     
     def _analyze_with_local_model(self, prompt: str) -> Dict:
         try:

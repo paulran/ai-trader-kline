@@ -1,4 +1,4 @@
-﻿import argparse
+import argparse
 from typing import Any
 
 from config import Config
@@ -270,13 +270,7 @@ def run_interactive_mode(config: Config, args: Any) -> None:
 
 
 def run_realtime_mode(config: Config, args: Any) -> None:
-    from realtime_analyzer import RealtimeAnalyzer
-    
-    analyzer = RealtimeAnalyzer(
-        config=config,
-        bar_type=args.bar,
-        interval=args.interval
-    )
+    from realtime_analyzer import RealtimeAnalyzer, MultiTimeframeAnalyzer
     
     use_llm = not args.no_llm
     use_rl = not args.no_rl
@@ -284,28 +278,58 @@ def run_realtime_mode(config: Config, args: Any) -> None:
     simulate_trade = args.simulate
     use_aligned_time = not getattr(args, 'no_align', False)
     
-    analyzer.initialize_trader(
-        model_path=args.model_path if use_rl else None,
-        use_llm=use_llm,
-        use_rl=use_rl
-    )
-    
-    if args.once:
-        analyzer.run_once(
+    if args.multi:
+        analyzer = MultiTimeframeAnalyzer(config=config)
+        
+        analyzer.initialize_trader(
+            model_path=args.model_path if use_rl else None,
             use_llm=use_llm,
-            save_data=save_data,
-            simulate_trade=simulate_trade,
-            use_aligned_time=use_aligned_time,
             use_rl=use_rl
         )
+        
+        if args.once:
+            analyzer.run_once(
+                use_llm=use_llm,
+                save_data=save_data,
+                simulate_trade=simulate_trade,
+                use_aligned_time=use_aligned_time
+            )
+        else:
+            analyzer.start(
+                use_llm=use_llm,
+                save_data=save_data,
+                simulate_trade=simulate_trade,
+                use_aligned_time=use_aligned_time
+            )
     else:
-        analyzer.start(
+        analyzer = RealtimeAnalyzer(
+            config=config,
+            bar_type=args.bar,
+            interval=args.interval
+        )
+        
+        analyzer.initialize_trader(
+            model_path=args.model_path if use_rl else None,
             use_llm=use_llm,
-            save_data=save_data,
-            simulate_trade=simulate_trade,
-            use_aligned_time=use_aligned_time,
             use_rl=use_rl
         )
+        
+        if args.once:
+            analyzer.run_once(
+                use_llm=use_llm,
+                save_data=save_data,
+                simulate_trade=simulate_trade,
+                use_aligned_time=use_aligned_time,
+                use_rl=use_rl
+            )
+        else:
+            analyzer.start(
+                use_llm=use_llm,
+                save_data=save_data,
+                simulate_trade=simulate_trade,
+                use_aligned_time=use_aligned_time,
+                use_rl=use_rl
+            )
 
 
 def parse_args():
@@ -332,7 +356,10 @@ def parse_args():
     
     parser.add_argument('--bar', type=str, default='1m',
                         choices=['1m', '15m'],
-                        help='K线周期: 1m (1分钟) 或 15m (15分钟) (默认: 1m) [仅realtime模式]')
+                        help='K线周期: 1m (1分钟) 或 15m (15分钟) (默认: 1m) [仅realtime模式，非multi模式]')
+    
+    parser.add_argument('--multi', action='store_true', default=False,
+                        help='启用多时间周期分析模式，同时分析1分钟和15分钟K线数据 [仅realtime模式]')
     
     parser.add_argument('--interval', type=int, default=None,
                         help='刷新间隔（秒），默认: 1m=60秒, 15m=900秒 [仅realtime模式]')
