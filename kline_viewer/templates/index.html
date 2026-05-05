@@ -1,0 +1,1687 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>K线图表查看器</title>
+    <script>
+        var chartLibLoaded = false;
+        
+        function loadScript(url, onSuccess, onError) {
+            var script = document.createElement('script');
+            script.src = url;
+            script.onload = onSuccess;
+            script.onerror = onError;
+            document.head.appendChild(script);
+        }
+        
+        var cdnSources = [
+            'https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js',
+            'https://cdnjs.cloudflare.com/ajax/libs/lightweight-charts/4.1.0/lightweight-charts.standalone.production.min.js'
+        ];
+        
+        var currentSourceIndex = 0;
+        
+        function tryLoadNextSource() {
+            if (currentSourceIndex >= cdnSources.length) {
+                console.error('所有 CDN 源都无法加载 lightweight-charts 库');
+                alert('无法加载图表库，请检查网络连接或手动下载 lightweight-charts 库到 static 目录');
+                return;
+            }
+            
+            var url = cdnSources[currentSourceIndex];
+            console.log('尝试从 CDN 加载 lightweight-charts: ' + url);
+            
+            loadScript(
+                url,
+                function() {
+                    console.log('成功从 CDN 加载 lightweight-charts');
+                    chartLibLoaded = true;
+                    initChartViewer();
+                },
+                function() {
+                    console.warn('CDN 源加载失败: ' + url);
+                    currentSourceIndex++;
+                    tryLoadNextSource();
+                }
+            );
+        }
+        
+        tryLoadNextSource();
+    </script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #131722;
+            color: #d1d4dc;
+            min-height: 100vh;
+        }
+        
+        .header {
+            background: #1e222d;
+            border-bottom: 1px solid #2a2e39;
+            padding: 8px 16px;
+        }
+        
+        .header h1 {
+            font-size: 18px;
+            font-weight: 600;
+            color: #fff;
+            margin: 0 0 8px 0;
+        }
+        
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        
+        .controls-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+        }
+        
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        
+        .control-group label {
+            font-size: 11px;
+            color: #787b86;
+        }
+        
+        .control-group select,
+        .control-group input {
+            background: #2a2e39;
+            border: 1px solid #363a45;
+            border-radius: 4px;
+            padding: 6px 10px;
+            color: #d1d4dc;
+            font-size: 13px;
+            min-width: 100px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        
+        .control-group select:focus,
+        .control-group input:focus {
+            border-color: #2962ff;
+        }
+        
+        .control-group select {
+            cursor: pointer;
+        }
+        
+        .checkbox-group {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+        
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            cursor: pointer;
+        }
+        
+        .checkbox-item input[type="checkbox"] {
+            width: 14px;
+            height: 14px;
+            min-width: auto;
+            cursor: pointer;
+        }
+        
+        .checkbox-item label {
+            font-size: 12px;
+            color: #d1d4dc;
+            cursor: pointer;
+            margin-bottom: 0;
+        }
+        
+        .checkbox-item.ma5 label { color: #2962ff; }
+        .checkbox-item.ma10 label { color: #f9a825; }
+        .checkbox-item.ma20 label { color: #e91e63; }
+        .checkbox-item.rsi label { color: #9c27b0; }
+        .checkbox-item.macd label { color: #00bcd4; }
+        
+        .btn {
+            background: #2962ff;
+            border: none;
+            border-radius: 4px;
+            padding: 8px 20px;
+            color: #fff;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s;
+            margin-top: 16px;
+        }
+        
+        .btn:hover {
+            background: #1e53e5;
+        }
+        
+        .btn-share {
+            background: #363a45;
+            margin-left: 8px;
+        }
+        
+        .btn-share:hover {
+            background: #434854;
+        }
+        
+        .main-container {
+            display: flex;
+            height: calc(100vh - 160px);
+        }
+        
+        .chart-container {
+            flex: 1;
+            position: relative;
+            height: 100%;
+        }
+        
+        #chart {
+            width: 100%;
+            height: 100%;
+        }
+        
+        .chart-title {
+            position: absolute;
+            top: 8px;
+            left: 10px;
+            z-index: 10;
+            font-size: 12px;
+            font-weight: 600;
+            color: #787b86;
+            background: rgba(30, 34, 45, 0.9);
+            padding: 4px 8px;
+            border-radius: 4px;
+        }
+        
+        .legend {
+            position: absolute;
+            top: 8px;
+            right: 10px;
+            z-index: 10;
+            background: rgba(30, 34, 45, 0.9);
+            border: 1px solid #2a2e39;
+            border-radius: 4px;
+            padding: 8px 12px;
+            font-size: 11px;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin: 3px 0;
+        }
+        
+        .legend-color {
+            width: 16px;
+            height: 2px;
+        }
+        
+        .legend-color.buy {
+            width: 0;
+            height: 0;
+            border-left: 6px solid transparent;
+            border-right: 6px solid transparent;
+            border-top: 10px solid #089981;
+        }
+        
+        .legend-color.sell {
+            width: 0;
+            height: 0;
+            border-left: 6px solid transparent;
+            border-right: 6px solid transparent;
+            border-bottom: 10px solid #f23645;
+        }
+        
+        .info-panel {
+            width: 300px;
+            background: #1e222d;
+            border-right: 1px solid #2a2e39;
+            padding: 16px;
+            overflow-y: auto;
+        }
+        
+        .info-panel h3 {
+            font-size: 14px;
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #2a2e39;
+        }
+        
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 6px 0;
+            font-size: 13px;
+            border-bottom: 1px solid #2a2e39;
+        }
+        
+        .info-label {
+            color: #787b86;
+        }
+        
+        .info-value {
+            color: #d1d4dc;
+            font-weight: 500;
+        }
+        
+        .info-value.up {
+            color: #089981;
+        }
+        
+        .info-value.down {
+            color: #f23645;
+        }
+        
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #787b86;
+            font-size: 14px;
+            z-index: 100;
+        }
+        
+        .tooltip {
+            position: absolute;
+            background: #1e222d;
+            border: 1px solid #2a2e39;
+            border-radius: 4px;
+            padding: 12px;
+            font-size: 12px;
+            z-index: 100;
+            pointer-events: none;
+            max-width: 280px;
+            display: none;
+        }
+        
+        .tooltip-title {
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 8px;
+            padding-bottom: 6px;
+            border-bottom: 1px solid #2a2e39;
+        }
+        
+        .tooltip-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 4px 0;
+        }
+        
+        .tooltip-row .label {
+            color: #787b86;
+        }
+        
+        .tooltip-row .value {
+            color: #d1d4dc;
+        }
+        
+        .tooltip-signal {
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid #2a2e39;
+        }
+        
+        .tooltip-signal.buy {
+            color: #089981;
+        }
+        
+        .tooltip-signal.sell {
+            color: #f23645;
+        }
+        
+        @media (max-width: 1024px) {
+            .main-container {
+                flex-direction: column;
+                height: auto;
+            }
+            
+            .info-panel {
+                width: 100%;
+                height: 200px;
+                border-right: none;
+                border-bottom: 1px solid #2a2e39;
+            }
+            
+            .chart-wrapper.main {
+                height: 400px;
+            }
+            
+            .chart-wrapper.sub {
+                height: 200px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="controls">
+            <div class="controls-row">
+                <div class="control-group">
+                    <label>交易所</label>
+                    <select id="exchange">
+                        <option value="OKX">OKX</option>
+                        <option value="BINANCE">BINANCE</option>
+                        <option value="CFFEX">CFFEX</option>
+                    </select>
+                </div>
+                
+                <div class="control-group">
+                    <label>交易类型</label>
+                    <select id="instType">
+                        <option value="SPOT">现货 (SPOT)</option>
+                        <option value="PERP">永续合约 (PERP)</option>
+                    </select>
+                </div>
+                
+                <div class="control-group">
+                    <label>交易对</label>
+                    <select id="symbol">
+                        <option value="BTC-USDT">BTC-USDT</option>
+                        <option value="BTC-USDT-SWAP">BTC-USDT-SWAP</option>
+                        <option value="ETH-USDT">ETH-USDT</option>
+                        <option value="ETH-USDT-SWAP">ETH-USDT-SWAP</option>
+                    </select>
+                </div>
+                
+                <div class="control-group">
+                    <label>时间周期</label>
+                    <select id="period">
+                        <option value="1m">1分钟</option>
+                        <option value="15m">15分钟</option>
+                    </select>
+                </div>
+                
+                <div class="control-group">
+                    <label>开始日期</label>
+                    <input type="date" id="startDate">
+                </div>
+                
+                <div class="control-group">
+                    <label>结束日期</label>
+                    <input type="date" id="endDate">
+                </div>
+            </div>
+            
+            <div class="controls-row">
+                <div class="control-group">
+                    <label>显示指标</label>
+                    <div class="checkbox-group">
+                        <div class="checkbox-item ma5">
+                            <input type="checkbox" id="showMA5" checked>
+                            <label for="showMA5">MA5</label>
+                        </div>
+                        <div class="checkbox-item ma10">
+                            <input type="checkbox" id="showMA10" checked>
+                            <label for="showMA10">MA10</label>
+                        </div>
+                        <div class="checkbox-item ma20">
+                            <input type="checkbox" id="showMA20" checked>
+                            <label for="showMA20">MA20</label>
+                        </div>
+                        <div class="checkbox-item rsi">
+                            <input type="checkbox" id="showRSI" checked>
+                            <label for="showRSI">RSI</label>
+                        </div>
+                        <div class="checkbox-item macd">
+                            <input type="checkbox" id="showMACD" checked>
+                            <label for="showMACD">MACD</label>
+                        </div>
+                        <div class="checkbox-item kdj">
+                            <input type="checkbox" id="showKDJ">
+                            <label for="showKDJ">KDJ</label>
+                        </div>
+                    </div>
+                </div>
+                
+                <button class="btn" id="loadBtn">加载数据</button>
+            </div>
+        </div>
+    </div>
+    
+    <div class="main-container">
+        <div class="info-panel" id="infoPanel">
+            <h3 style="margin-top: 0;">交易信号</h3>
+            <div id="signalInfo">
+                <div class="info-row">
+                    <span class="info-label">类型</span>
+                    <span class="info-value" id="infoSignalType">-</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">置信度</span>
+                    <span class="info-value" id="infoSignalConfidence">-</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">备注</span>
+                    <span class="info-value" id="infoSignalRemark">-</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="chart-container">
+            <div id="chart"></div>
+            <div class="loading" id="loading">加载中...</div>
+            <div class="tooltip" id="tooltip"></div>
+        </div>
+    </div>
+
+    <script>
+        class KlineViewer {
+            constructor() {
+                this.chart = null;
+                
+                this.candlestickSeries = null;
+                this.volumeSeries = null;
+                this.ma5Series = null;
+                this.ma10Series = null;
+                this.ma20Series = null;
+                
+                this.rsiSeries = null;
+                this.rsiOverboughtLine = null;
+                this.rsiOversoldLine = null;
+                
+                this.difSeries = null;
+                this.deaSeries = null;
+                this.macdHistogramSeries = null;
+                this.macdZeroLine = null;
+                
+                this.kSeries = null;
+                this.dSeries = null;
+                this.jSeries = null;
+                this.kdjOverboughtLine = null;
+                this.kdjOversoldLine = null;
+                
+                this.data = [];
+                this.signalMap = new Map();
+                
+                this.ma5Data = [];
+                this.ma10Data = [];
+                this.ma20Data = [];
+                this.rsiData = [];
+                this.macdData = [];
+                this.kdjData = [];
+                
+                this.isLoading = false;
+                this.loadedBefore = false;
+                this.loadedAfter = false;
+                
+                this.showMA5 = true;
+                this.showMA10 = true;
+                this.showMA20 = true;
+                this.showRSI = true;
+                this.showMACD = true;
+                this.showKDJ = false;
+                
+                this.periodToSeconds = {
+                    '1m': 60,
+                    '5m': 300,
+                    '15m': 900,
+                    '1h': 3600,
+                    '4h': 14400,
+                    '1d': 86400,
+                    '1w': 604800
+                };
+                
+                this.init();
+            }
+            
+            init() {
+                this.parseURLParams();
+                this.bindCheckboxEvents();
+                this.createChart();
+                this.bindEvents();
+                this.loadData();
+            }
+            
+            parseURLParams() {
+                const params = new URLSearchParams(window.location.search);
+                
+                const exchange = params.get('exchange');
+                const instType = params.get('type');
+                const symbol = params.get('symbol');
+                const period = params.get('period');
+                const startDate = params.get('startDate');
+                const endDate = params.get('endDate');
+                
+                const showMA5 = params.get('showMA5');
+                const showMA10 = params.get('showMA10');
+                const showMA20 = params.get('showMA20');
+                const showRSI = params.get('showRSI');
+                const showMACD = params.get('showMACD');
+                const showKDJ = params.get('showKDJ');
+                
+                if (exchange) document.getElementById('exchange').value = exchange;
+                if (instType) document.getElementById('instType').value = instType;
+                if (symbol) document.getElementById('symbol').value = symbol;
+                if (period) document.getElementById('period').value = period;
+                if (startDate) document.getElementById('startDate').value = startDate;
+                if (endDate) document.getElementById('endDate').value = endDate;
+                
+                if (showMA5 !== null) this.showMA5 = showMA5 === 'true';
+                if (showMA10 !== null) this.showMA10 = showMA10 === 'true';
+                if (showMA20 !== null) this.showMA20 = showMA20 === 'true';
+                if (showRSI !== null) this.showRSI = showRSI === 'true';
+                if (showMACD !== null) this.showMACD = showMACD === 'true';
+                if (showKDJ !== null) this.showKDJ = showKDJ === 'true';
+                
+                document.getElementById('showMA5').checked = this.showMA5;
+                document.getElementById('showMA10').checked = this.showMA10;
+                document.getElementById('showMA20').checked = this.showMA20;
+                document.getElementById('showRSI').checked = this.showRSI;
+                document.getElementById('showMACD').checked = this.showMACD;
+                document.getElementById('showKDJ').checked = this.showKDJ;
+            }
+            
+            getParams() {
+                return {
+                    exchange: document.getElementById('exchange').value,
+                    instType: document.getElementById('instType').value,
+                    symbol: document.getElementById('symbol').value,
+                    period: document.getElementById('period').value,
+                    startDate: document.getElementById('startDate').value,
+                    endDate: document.getElementById('endDate').value
+                };
+            }
+            
+            createShareURL() {
+                const params = this.getParams();
+                const url = new URL(window.location.href);
+                url.searchParams.set('exchange', params.exchange);
+                url.searchParams.set('type', params.instType);
+                url.searchParams.set('symbol', params.symbol);
+                url.searchParams.set('period', params.period);
+                if (params.startDate) url.searchParams.set('startDate', params.startDate);
+                if (params.endDate) url.searchParams.set('endDate', params.endDate);
+                url.searchParams.set('showMA5', this.showMA5);
+                url.searchParams.set('showMA10', this.showMA10);
+                url.searchParams.set('showMA20', this.showMA20);
+                url.searchParams.set('showRSI', this.showRSI);
+                url.searchParams.set('showMACD', this.showMACD);
+                url.searchParams.set('showKDJ', this.showKDJ);
+                return url.toString();
+            }
+            
+            bindCheckboxEvents() {
+                const self = this;
+                
+                document.getElementById('showMA5').addEventListener('change', function() {
+                    self.showMA5 = this.checked;
+                    self.updateSeriesVisibility();
+                });
+                
+                document.getElementById('showMA10').addEventListener('change', function() {
+                    self.showMA10 = this.checked;
+                    self.updateSeriesVisibility();
+                });
+                
+                document.getElementById('showMA20').addEventListener('change', function() {
+                    self.showMA20 = this.checked;
+                    self.updateSeriesVisibility();
+                });
+                
+                document.getElementById('showRSI').addEventListener('change', function() {
+                    self.showRSI = this.checked;
+                    self.updateLayout();
+                    self.updateSeriesVisibility();
+                });
+                
+                document.getElementById('showMACD').addEventListener('change', function() {
+                    self.showMACD = this.checked;
+                    self.updateLayout();
+                    self.updateSeriesVisibility();
+                });
+                
+                document.getElementById('showKDJ').addEventListener('change', function() {
+                    self.showKDJ = this.checked;
+                    self.updateLayout();
+                    self.updateSeriesVisibility();
+                });
+            }
+            
+            getLayoutConfig() {
+                const sections = [];
+                const subChartCount = [this.showRSI, this.showMACD, this.showKDJ].filter(v => v).length;
+                
+                if (subChartCount === 0) {
+                    sections.push({
+                        name: 'main',
+                        top: 0.02,
+                        bottom: 0.85,
+                        height: 0.83
+                    });
+                    
+                    sections.push({
+                        name: 'volume',
+                        top: 0.85,
+                        bottom: 0.98,
+                        height: 0.13
+                    });
+                } else {
+                    let mainBottom, subChartStart, subChartHeight;
+                    
+                    if (subChartCount === 1) {
+                        mainBottom = 0.70;
+                        subChartStart = 0.80;
+                        subChartHeight = 0.17;
+                    } else if (subChartCount === 2) {
+                        mainBottom = 0.60;
+                        subChartStart = 0.70;
+                        subChartHeight = 0.14;
+                    } else {
+                        mainBottom = 0.55;
+                        subChartStart = 0.65;
+                        subChartHeight = 0.11;
+                    }
+                    
+                    sections.push({
+                        name: 'main',
+                        top: 0.02,
+                        bottom: mainBottom,
+                        height: mainBottom - 0.02
+                    });
+                    
+                    sections.push({
+                        name: 'volume',
+                        top: mainBottom,
+                        bottom: mainBottom + 0.10,
+                        height: 0.10
+                    });
+                    
+                    let currentSubStart = subChartStart;
+                    
+                    if (this.showRSI) {
+                        sections.push({
+                            name: 'rsi',
+                            top: currentSubStart + 0.01,
+                            bottom: currentSubStart + subChartHeight - 0.01,
+                            height: subChartHeight - 0.02
+                        });
+                        currentSubStart += subChartHeight;
+                    }
+                    
+                    if (this.showMACD) {
+                        sections.push({
+                            name: 'macd',
+                            top: currentSubStart + 0.01,
+                            bottom: currentSubStart + subChartHeight - 0.01,
+                            height: subChartHeight - 0.02
+                        });
+                        currentSubStart += subChartHeight;
+                    }
+                    
+                    if (this.showKDJ) {
+                        sections.push({
+                            name: 'kdj',
+                            top: currentSubStart + 0.01,
+                            bottom: currentSubStart + subChartHeight - 0.01,
+                            height: subChartHeight - 0.02
+                        });
+                    }
+                }
+                
+                return sections;
+            }
+            
+            updateLayout() {
+                const sections = this.getLayoutConfig();
+                
+                const getSection = (name) => sections.find(s => s.name === name);
+                
+                const mainSection = getSection('main');
+                const volumeSection = getSection('volume');
+                const rsiSection = getSection('rsi');
+                const macdSection = getSection('macd');
+                const kdjSection = getSection('kdj');
+                
+                if (this.candlestickSeries && mainSection) {
+                    this.candlestickSeries.priceScale().applyOptions({
+                        scaleMargins: {
+                            top: mainSection.top,
+                            bottom: 1 - mainSection.bottom
+                        }
+                    });
+                }
+                
+                if (this.volumeSeries && volumeSection) {
+                    this.volumeSeries.priceScale().applyOptions({
+                        scaleMargins: {
+                            top: volumeSection.top,
+                            bottom: 1 - volumeSection.bottom
+                        }
+                    });
+                }
+                
+                if (this.ma5Series && mainSection) {
+                    this.ma5Series.priceScale().applyOptions({
+                        scaleMargins: {
+                            top: mainSection.top,
+                            bottom: 1 - mainSection.bottom
+                        }
+                    });
+                }
+                if (this.ma10Series && mainSection) {
+                    this.ma10Series.priceScale().applyOptions({
+                        scaleMargins: {
+                            top: mainSection.top,
+                            bottom: 1 - mainSection.bottom
+                        }
+                    });
+                }
+                if (this.ma20Series && mainSection) {
+                    this.ma20Series.priceScale().applyOptions({
+                        scaleMargins: {
+                            top: mainSection.top,
+                            bottom: 1 - mainSection.bottom
+                        }
+                    });
+                }
+                
+                if (this.rsiSeries && rsiSection) {
+                    this.chart.priceScale('rsi').applyOptions({
+                        min: 0,
+                        max: 100,
+                        scaleMargins: {
+                            top: rsiSection.top,
+                            bottom: 1 - rsiSection.bottom
+                        },
+                        borderColor: '#2a2e39',
+                    });
+                }
+                
+                if (this.difSeries && macdSection) {
+                    this.difSeries.priceScale().applyOptions({
+                        scaleMargins: {
+                            top: macdSection.top,
+                            bottom: 1 - macdSection.bottom
+                        }
+                    });
+                }
+                if (this.deaSeries && macdSection) {
+                    this.deaSeries.priceScale().applyOptions({
+                        scaleMargins: {
+                            top: macdSection.top,
+                            bottom: 1 - macdSection.bottom
+                        }
+                    });
+                }
+                if (this.macdHistogramSeries && macdSection) {
+                    this.macdHistogramSeries.priceScale().applyOptions({
+                        scaleMargins: {
+                            top: macdSection.top,
+                            bottom: 1 - macdSection.bottom
+                        }
+                    });
+                }
+                if (this.macdZeroLine && macdSection) {
+                    this.macdZeroLine.priceScale().applyOptions({
+                        scaleMargins: {
+                            top: macdSection.top,
+                            bottom: 1 - macdSection.bottom
+                        }
+                    });
+                }
+                
+                if (this.kSeries && kdjSection) {
+                    this.chart.priceScale('kdj').applyOptions({
+                        min: 0,
+                        max: 100,
+                        scaleMargins: {
+                            top: kdjSection.top,
+                            bottom: 1 - kdjSection.bottom
+                        },
+                        borderColor: '#2a2e39',
+                    });
+                }
+            }
+            
+            createChart() {
+                const chartContainer = document.getElementById('chart');
+                
+                this.chart = LightweightCharts.createChart(chartContainer, {
+                    layout: {
+                        background: { color: '#131722' },
+                        textColor: '#d1d4dc',
+                    },
+                    grid: {
+                        vertLines: { color: '#1e222d' },
+                        horzLines: { color: '#1e222d' },
+                    },
+                    crosshair: {
+                        mode: LightweightCharts.CrosshairMode.Normal,
+                    },
+                    rightPriceScale: {
+                        borderColor: '#2a2e39',
+                    },
+                    timeScale: {
+                        borderColor: '#2a2e39',
+                        timeVisible: true,
+                        secondsVisible: false,
+                    },
+                });
+                
+                this.candlestickSeries = this.chart.addCandlestickSeries({
+                    upColor: '#089981',
+                    downColor: '#f23645',
+                    borderUpColor: '#089981',
+                    borderDownColor: '#f23645',
+                    wickUpColor: '#089981',
+                    wickDownColor: '#f23645',
+                });
+                
+                this.volumeSeries = this.chart.addHistogramSeries({
+                    priceFormat: {
+                        type: 'volume',
+                    },
+                    priceScaleId: 'volume',
+                });
+                
+                this.ma5Series = this.chart.addLineSeries({
+                    color: '#2962ff',
+                    lineWidth: 1,
+                    priceLineVisible: false,
+                    lastValueVisible: false,
+                });
+                
+                this.ma10Series = this.chart.addLineSeries({
+                    color: '#f9a825',
+                    lineWidth: 1,
+                    priceLineVisible: false,
+                    lastValueVisible: false,
+                });
+                
+                this.ma20Series = this.chart.addLineSeries({
+                    color: '#e91e63',
+                    lineWidth: 1,
+                    priceLineVisible: false,
+                    lastValueVisible: false,
+                });
+                
+                this.rsiSeries = this.chart.addLineSeries({
+                    color: '#9c27b0',
+                    lineWidth: 1.5,
+                    priceLineVisible: false,
+                    lastValueVisible: false,
+                    priceScaleId: 'rsi',
+                });
+                this.chart.priceScale('rsi').applyOptions({
+                    min: 0,
+                    max: 100,
+                    borderColor: '#2a2e39',
+                });
+                
+                this.rsiOverboughtLine = this.chart.addLineSeries({
+                    color: '#f23645',
+                    lineWidth: 1,
+                    lineStyle: 2,
+                    priceLineVisible: false,
+                    lastValueVisible: false,
+                    priceScaleId: 'rsi',
+                });
+                
+                this.rsiOversoldLine = this.chart.addLineSeries({
+                    color: '#089981',
+                    lineWidth: 1,
+                    lineStyle: 2,
+                    priceLineVisible: false,
+                    lastValueVisible: false,
+                    priceScaleId: 'rsi',
+                });
+                
+                this.difSeries = this.chart.addLineSeries({
+                    color: '#2962ff',
+                    lineWidth: 1.5,
+                    priceLineVisible: false,
+                    lastValueVisible: false,
+                    priceScaleId: 'macd',
+                });
+                
+                this.deaSeries = this.chart.addLineSeries({
+                    color: '#f9a825',
+                    lineWidth: 1.5,
+                    priceLineVisible: false,
+                    lastValueVisible: false,
+                    priceScaleId: 'macd',
+                });
+                
+                this.macdHistogramSeries = this.chart.addHistogramSeries({
+                    priceFormat: {
+                        type: 'price',
+                    },
+                    priceScaleId: 'macd',
+                });
+                
+                this.macdZeroLine = this.chart.addLineSeries({
+                    color: '#787b86',
+                    lineWidth: 1,
+                    lineStyle: 2,
+                    priceLineVisible: false,
+                    lastValueVisible: false,
+                    priceScaleId: 'macd',
+                });
+                
+                this.kSeries = this.chart.addLineSeries({
+                    color: '#ff9800',
+                    lineWidth: 1.5,
+                    priceLineVisible: false,
+                    lastValueVisible: false,
+                    priceScaleId: 'kdj',
+                });
+                
+                this.dSeries = this.chart.addLineSeries({
+                    color: '#4caf50',
+                    lineWidth: 1.5,
+                    priceLineVisible: false,
+                    lastValueVisible: false,
+                    priceScaleId: 'kdj',
+                });
+                
+                this.jSeries = this.chart.addLineSeries({
+                    color: '#e91e63',
+                    lineWidth: 1.5,
+                    priceLineVisible: false,
+                    lastValueVisible: false,
+                    priceScaleId: 'kdj',
+                });
+                this.chart.priceScale('kdj').applyOptions({
+                    min: 0,
+                    max: 100,
+                    borderColor: '#2a2e39',
+                });
+                
+                this.kdjOverboughtLine = this.chart.addLineSeries({
+                    color: '#f23645',
+                    lineWidth: 1,
+                    lineStyle: 2,
+                    priceLineVisible: false,
+                    lastValueVisible: false,
+                    priceScaleId: 'kdj',
+                });
+                
+                this.kdjOversoldLine = this.chart.addLineSeries({
+                    color: '#089981',
+                    lineWidth: 1,
+                    lineStyle: 2,
+                    priceLineVisible: false,
+                    lastValueVisible: false,
+                    priceScaleId: 'kdj',
+                });
+                
+                this.updateLayout();
+                this.updateSeriesVisibility();
+                
+                this.chart.timeScale().subscribeVisibleTimeRangeChange((range) => {
+                    if (range && !this.isLoading) {
+                        this.checkAndLoadMoreData(range);
+                    }
+                });
+                
+                this.chart.subscribeCrosshairMove((param) => {
+                    this.handleCrosshairMove(param);
+                });
+                
+                new ResizeObserver(() => {
+                    this.chart.applyOptions({ 
+                        width: chartContainer.clientWidth,
+                        height: chartContainer.clientHeight
+                    });
+                }).observe(chartContainer);
+            }
+            
+            updateSeriesVisibility() {
+                if (this.ma5Series) {
+                    this.ma5Series.applyOptions({ visible: this.showMA5 });
+                }
+                if (this.ma10Series) {
+                    this.ma10Series.applyOptions({ visible: this.showMA10 });
+                }
+                if (this.ma20Series) {
+                    this.ma20Series.applyOptions({ visible: this.showMA20 });
+                }
+                
+                if (this.rsiSeries) {
+                    this.rsiSeries.applyOptions({ visible: this.showRSI });
+                }
+                if (this.rsiOverboughtLine) {
+                    this.rsiOverboughtLine.applyOptions({ visible: this.showRSI });
+                }
+                if (this.rsiOversoldLine) {
+                    this.rsiOversoldLine.applyOptions({ visible: this.showRSI });
+                }
+                
+                if (this.difSeries) {
+                    this.difSeries.applyOptions({ visible: this.showMACD });
+                }
+                if (this.deaSeries) {
+                    this.deaSeries.applyOptions({ visible: this.showMACD });
+                }
+                if (this.macdHistogramSeries) {
+                    this.macdHistogramSeries.applyOptions({ visible: this.showMACD });
+                }
+                if (this.macdZeroLine) {
+                    this.macdZeroLine.applyOptions({ visible: this.showMACD });
+                }
+                
+                if (this.kSeries) {
+                    this.kSeries.applyOptions({ visible: this.showKDJ });
+                }
+                if (this.dSeries) {
+                    this.dSeries.applyOptions({ visible: this.showKDJ });
+                }
+                if (this.jSeries) {
+                    this.jSeries.applyOptions({ visible: this.showKDJ });
+                }
+                if (this.kdjOverboughtLine) {
+                    this.kdjOverboughtLine.applyOptions({ visible: this.showKDJ });
+                }
+                if (this.kdjOversoldLine) {
+                    this.kdjOversoldLine.applyOptions({ visible: this.showKDJ });
+                }
+            }
+            
+            async loadData(loadBefore = false, loadAfter = false) {
+                if (this.isLoading) return;
+                
+                this.isLoading = true;
+                document.getElementById('loading').style.display = 'block';
+                
+                try {
+                    const params = this.getParams();
+                    let url = `/api/klines?exchange=${params.exchange}&type=${params.instType}&symbol=${params.symbol}&period=${params.period}`;
+                    
+                    if (loadBefore && this.data.length > 0) {
+                        const earliestTime = this.data[0].time;
+                        const periodSec = this.periodToSeconds[params.period] || 60;
+                        const beforeTime = earliestTime - periodSec * 500;
+                        url += `&end_time=${earliestTime - 1}&start_time=${beforeTime}`;
+                    } else if (loadAfter && this.data.length > 0) {
+                        const latestTime = this.data[this.data.length - 1].time;
+                        const periodSec = this.periodToSeconds[params.period] || 60;
+                        const afterTime = latestTime + periodSec * 500;
+                        url += `&start_time=${latestTime + 1}&end_time=${afterTime}`;
+                    } else {
+                        if (params.startDate) {
+                            url += `&start_time=${new Date(params.startDate).getTime() / 1000}`;
+                        }
+                        if (params.endDate) {
+                            url += `&end_time=${new Date(params.endDate).getTime() / 1000}`;
+                        }
+                    }
+                    
+                    const response = await fetch(url);
+                    const result = await response.json();
+                    
+                    if (result.success && result.data.length > 0) {
+                        this.processData(result, loadBefore, loadAfter);
+                    } else {
+                        console.log('No data found');
+                        if (loadBefore) this.loadedBefore = true;
+                        if (loadAfter) this.loadedAfter = true;
+                    }
+                } catch (error) {
+                    console.error('Load data error:', error);
+                } finally {
+                    this.isLoading = false;
+                    document.getElementById('loading').style.display = 'none';
+                }
+            }
+            
+            processData(result, loadBefore = false, loadAfter = false) {
+                const newData = result.data.map(d => ({
+                    time: d.time,
+                    open: d.open,
+                    high: d.high,
+                    low: d.low,
+                    close: d.close,
+                    volume: d.volume
+                }));
+                
+                const newSignals = result.signals || [];
+                
+                if (loadBefore) {
+                    this.data = [...newData, ...this.data];
+                } else if (loadAfter) {
+                    this.data = [...this.data, ...newData];
+                } else {
+                    this.data = newData;
+                    this.signalMap = new Map();
+                }
+                
+                newSignals.forEach(s => {
+                    this.signalMap.set(s.time, s);
+                });
+                
+                console.log(`[KlineViewer] processData: data.length=${this.data.length}, loadBefore=${loadBefore}, loadAfter=${loadAfter}`);
+                if (this.data.length > 0) {
+                    console.log(`[KlineViewer] First data point: time=${this.data[0].time}, open=${this.data[0].open}`);
+                    console.log(`[KlineViewer] Last data point: time=${this.data[this.data.length - 1].time}, close=${this.data[this.data.length - 1].close}`);
+                }
+                
+                this.calculateIndicators();
+                this.updateCharts();
+                
+                if (this.chart && this.data.length > 0) {
+                    console.log(`[KlineViewer] Calling fitContent() to auto-fit data range`);
+                    this.chart.timeScale().fitContent();
+                }
+            }
+            
+            calculateIndicators() {
+                const closes = this.data.map(d => d.close);
+                const highs = this.data.map(d => d.high);
+                const lows = this.data.map(d => d.low);
+                
+                this.ma5Data = this.calculateMA(closes, 5);
+                this.ma10Data = this.calculateMA(closes, 10);
+                this.ma20Data = this.calculateMA(closes, 20);
+                this.rsiData = this.calculateRSI(closes, 14);
+                this.macdData = this.calculateMACD(closes, 12, 26, 9);
+                this.kdjData = this.calculateKDJ(highs, lows, closes, 9, 3, 3);
+            }
+            
+            calculateKDJ(highs, lows, closes, n = 9, m1 = 3, m2 = 3) {
+                const k = [];
+                const d = [];
+                const j = [];
+                
+                for (let i = 0; i < closes.length; i++) {
+                    if (i < n - 1) {
+                        k.push(null);
+                        d.push(null);
+                        j.push(null);
+                        continue;
+                    }
+                    
+                    let highestHigh = -Infinity;
+                    let lowestLow = Infinity;
+                    
+                    for (let j2 = 0; j2 < n; j2++) {
+                        highestHigh = Math.max(highestHigh, highs[i - j2]);
+                        lowestLow = Math.min(lowestLow, lows[i - j2]);
+                    }
+                    
+                    const rsv = highestHigh === lowestLow 
+                        ? 50 
+                        : (closes[i] - lowestLow) / (highestHigh - lowestLow) * 100;
+                    
+                    let currentK, currentD;
+                    
+                    if (i === n - 1) {
+                        currentK = rsv;
+                        currentD = rsv;
+                    } else {
+                        const prevK = k[i - 1] !== null ? k[i - 1] : rsv;
+                        const prevD = d[i - 1] !== null ? d[i - 1] : rsv;
+                        
+                        currentK = (prevK * (m1 - 1) + rsv) / m1;
+                        currentD = (prevD * (m2 - 1) + currentK) / m2;
+                    }
+                    
+                    const currentJ = 3 * currentK - 2 * currentD;
+                    
+                    k.push(currentK);
+                    d.push(currentD);
+                    j.push(currentJ);
+                }
+                
+                return { k, d, j };
+            }
+            
+            calculateMA(data, period) {
+                const result = [];
+                for (let i = 0; i < data.length; i++) {
+                    if (i < period - 1) {
+                        result.push(null);
+                    } else {
+                        let sum = 0;
+                        for (let j = 0; j < period; j++) {
+                            sum += data[i - j];
+                        }
+                        result.push(sum / period);
+                    }
+                }
+                return result;
+            }
+            
+            calculateEMA(data, period) {
+                const result = [];
+                const multiplier = 2 / (period + 1);
+                
+                for (let i = 0; i < data.length; i++) {
+                    if (i < period - 1) {
+                        result.push(null);
+                    } else if (i === period - 1) {
+                        let sum = 0;
+                        for (let j = 0; j < period; j++) {
+                            sum += data[i - j];
+                        }
+                        result.push(sum / period);
+                    } else {
+                        const emaPrev = result[i - 1];
+                        result.push((data[i] - emaPrev) * multiplier + emaPrev);
+                    }
+                }
+                return result;
+            }
+            
+            calculateRSI(data, period) {
+                const result = [];
+                const changes = [];
+                
+                for (let i = 1; i < data.length; i++) {
+                    changes.push(data[i] - data[i - 1]);
+                }
+                
+                let avgGain = 0;
+                let avgLoss = 0;
+                
+                for (let i = 0; i < data.length; i++) {
+                    if (i < period) {
+                        result.push(null);
+                        if (i > 0) {
+                            if (changes[i - 1] > 0) avgGain += changes[i - 1];
+                            else avgLoss -= changes[i - 1];
+                        }
+                        if (i === period - 1) {
+                            avgGain /= period;
+                            avgLoss /= period;
+                        }
+                    } else {
+                        const change = changes[i - 1];
+                        const gain = change > 0 ? change : 0;
+                        const loss = change < 0 ? -change : 0;
+                        
+                        avgGain = (avgGain * (period - 1) + gain) / period;
+                        avgLoss = (avgLoss * (period - 1) + loss) / period;
+                        
+                        if (avgLoss === 0) {
+                            result.push(100);
+                        } else {
+                            const rs = avgGain / avgLoss;
+                            result.push(100 - (100 / (1 + rs)));
+                        }
+                    }
+                }
+                
+                return result;
+            }
+            
+            calculateMACD(closes, fastPeriod = 12, slowPeriod = 26, signalPeriod = 9) {
+                const emaFast = this.calculateEMA(closes, fastPeriod);
+                const emaSlow = this.calculateEMA(closes, slowPeriod);
+                
+                const dif = [];
+                for (let i = 0; i < closes.length; i++) {
+                    if (emaFast[i] !== null && emaSlow[i] !== null) {
+                        dif.push(emaFast[i] - emaSlow[i]);
+                    } else {
+                        dif.push(null);
+                    }
+                }
+                
+                const validDif = dif.filter(v => v !== null);
+                const dea = this.calculateEMA(validDif, signalPeriod);
+                
+                const deaPadded = [];
+                let deaIndex = 0;
+                for (let i = 0; i < dif.length; i++) {
+                    if (dif[i] === null) {
+                        deaPadded.push(null);
+                    } else if (deaIndex < dea.length) {
+                        deaPadded.push(dea[deaIndex]);
+                        deaIndex++;
+                    } else {
+                        deaPadded.push(null);
+                    }
+                }
+                
+                const macd = [];
+                for (let i = 0; i < dif.length; i++) {
+                    if (dif[i] !== null && deaPadded[i] !== null) {
+                        macd.push((dif[i] - deaPadded[i]) * 2);
+                    } else {
+                        macd.push(null);
+                    }
+                }
+                
+                return {
+                    dif: dif,
+                    dea: deaPadded,
+                    macd: macd
+                };
+            }
+            
+            updateCharts() {
+                if (this.data.length === 0) return;
+                
+                const candlestickData = this.data.map(d => ({
+                    time: d.time,
+                    open: d.open,
+                    high: d.high,
+                    low: d.low,
+                    close: d.close
+                }));
+                
+                const volumeData = this.data.map(d => ({
+                    time: d.time,
+                    value: d.volume,
+                    color: d.close >= d.open ? '#08998180' : '#f2364580'
+                }));
+                
+                this.candlestickSeries.setData(candlestickData);
+                this.volumeSeries.setData(volumeData);
+                
+                const ma5SeriesData = this.ma5Data.map((v, i) => v ? { time: this.data[i].time, value: v } : null).filter(v => v);
+                const ma10SeriesData = this.ma10Data.map((v, i) => v ? { time: this.data[i].time, value: v } : null).filter(v => v);
+                const ma20SeriesData = this.ma20Data.map((v, i) => v ? { time: this.data[i].time, value: v } : null).filter(v => v);
+                
+                if (ma5SeriesData.length > 0) this.ma5Series.setData(ma5SeriesData);
+                if (ma10SeriesData.length > 0) this.ma10Series.setData(ma10SeriesData);
+                if (ma20SeriesData.length > 0) this.ma20Series.setData(ma20SeriesData);
+                
+                const rsiSeriesData = this.rsiData.map((v, i) => v ? { time: this.data[i].time, value: v } : null).filter(v => v);
+                if (rsiSeriesData.length > 0) {
+                    this.rsiSeries.setData(rsiSeriesData);
+                    
+                    const overboughtData = rsiSeriesData.map(d => ({ time: d.time, value: 70 }));
+                    const oversoldData = rsiSeriesData.map(d => ({ time: d.time, value: 30 }));
+                    this.rsiOverboughtLine.setData(overboughtData);
+                    this.rsiOversoldLine.setData(oversoldData);
+                }
+                
+                if (this.macdData.dif.length > 0) {
+                    const difData = this.macdData.dif.map((v, i) => v ? { time: this.data[i].time, value: v } : null).filter(v => v);
+                    const deaData = this.macdData.dea.map((v, i) => v ? { time: this.data[i].time, value: v } : null).filter(v => v);
+                    const macdHistogramData = this.macdData.macd.map((v, i) => {
+                        if (v === null) return null;
+                        return { 
+                            time: this.data[i].time, 
+                            value: v,
+                            color: v >= 0 ? '#089981' : '#f23645'
+                        };
+                    }).filter(v => v);
+                    
+                    if (difData.length > 0) {
+                        this.difSeries.setData(difData);
+                        this.deaSeries.setData(deaData);
+                        if (macdHistogramData.length > 0) {
+                            this.macdHistogramSeries.setData(macdHistogramData);
+                        }
+                        
+                        const zeroLineData = difData.map(d => ({ time: d.time, value: 0 }));
+                        this.macdZeroLine.setData(zeroLineData);
+                    }
+                }
+                
+                if (this.kdjData.k.length > 0) {
+                    const kData = this.kdjData.k.map((v, i) => v ? { time: this.data[i].time, value: v } : null).filter(v => v);
+                    const dData = this.kdjData.d.map((v, i) => v ? { time: this.data[i].time, value: v } : null).filter(v => v);
+                    const jData = this.kdjData.j.map((v, i) => v ? { time: this.data[i].time, value: v } : null).filter(v => v);
+                    
+                    if (kData.length > 0) {
+                        this.kSeries.setData(kData);
+                        this.dSeries.setData(dData);
+                        this.jSeries.setData(jData);
+                        
+                        const overboughtData = kData.map(d => ({ time: d.time, value: 80 }));
+                        const oversoldData = kData.map(d => ({ time: d.time, value: 20 }));
+                        this.kdjOverboughtLine.setData(overboughtData);
+                        this.kdjOversoldLine.setData(oversoldData);
+                    }
+                }
+                
+                this.updateMarkers();
+            }
+            
+            updateMarkers() {
+                const markers = [];
+                
+                this.signalMap.forEach((signal, time) => {
+                    const dataPoint = this.data.find(d => d.time === time);
+                    if (dataPoint) {
+                        markers.push({
+                            time: time,
+                            position: signal.action === 0 ? 'belowBar' : 'aboveBar',
+                            color: signal.action === 0 ? '#089981' : '#f23645',
+                            shape: signal.action === 0 ? 'arrowUp' : 'arrowDown',
+                            text: `${signal.action_name} (${(signal.confidence * 100).toFixed(1)}%)`
+                        });
+                    }
+                });
+                
+                this.candlestickSeries.setMarkers(markers);
+            }
+            
+            checkAndLoadMoreData(range) {
+                if (this.data.length === 0) return;
+                
+                const earliestTime = this.data[0].time;
+                const latestTime = this.data[this.data.length - 1].time;
+                
+                const visibleFrom = range.from;
+                const visibleTo = range.to;
+                
+                const threshold = (latestTime - earliestTime) / this.data.length * 50;
+                
+                if (visibleFrom < earliestTime + threshold && !this.loadedBefore) {
+                    this.loadData(true, false);
+                }
+                
+                if (visibleTo > latestTime - threshold && !this.loadedAfter) {
+                    this.loadData(false, true);
+                }
+            }
+            
+            handleCrosshairMove(param) {
+                const tooltip = document.getElementById('tooltip');
+                
+                if (!param || !param.point || !param.time) {
+                    tooltip.style.display = 'none';
+                    return;
+                }
+                
+                const dataPoint = this.data.find(d => d.time === param.time);
+                
+                if (!dataPoint) {
+                    tooltip.style.display = 'none';
+                    return;
+                }
+                
+                const index = this.data.findIndex(d => d.time === param.time);
+                const signal = this.signalMap.get(dataPoint.time);
+                
+                this.updateInfoPanel(dataPoint, index, signal);
+                
+                let tooltipHTML = `<div class="tooltip-title">${this.formatTime(dataPoint.time)}</div>`;
+                
+                tooltipHTML += `<div class="tooltip-section">`;
+                tooltipHTML += `<div class="tooltip-section-title">K线数据</div>`;
+                tooltipHTML += `
+                    <div class="tooltip-row"><span class="label">开盘</span><span class="value">${dataPoint.open.toFixed(2)}</span></div>
+                    <div class="tooltip-row"><span class="label">最高</span><span class="value">${dataPoint.high.toFixed(2)}</span></div>
+                    <div class="tooltip-row"><span class="label">最低</span><span class="value">${dataPoint.low.toFixed(2)}</span></div>
+                    <div class="tooltip-row"><span class="label">收盘</span><span class="value">${dataPoint.close.toFixed(2)}</span></div>
+                    <div class="tooltip-row"><span class="label">成交量</span><span class="value">${this.formatVolume(dataPoint.volume)}</span></div>
+                `;
+                tooltipHTML += `</div>`;
+                
+                tooltipHTML += `<div class="tooltip-section">`;
+                tooltipHTML += `<div class="tooltip-section-title">均线</div>`;
+                if (this.ma5Data[index] !== null) {
+                    tooltipHTML += `<div class="tooltip-row"><span class="label">MA5</span><span class="value" style="color: #2962ff">${this.ma5Data[index].toFixed(2)}</span></div>`;
+                }
+                if (this.ma10Data[index] !== null) {
+                    tooltipHTML += `<div class="tooltip-row"><span class="label">MA10</span><span class="value" style="color: #f9a825">${this.ma10Data[index].toFixed(2)}</span></div>`;
+                }
+                if (this.ma20Data[index] !== null) {
+                    tooltipHTML += `<div class="tooltip-row"><span class="label">MA20</span><span class="value" style="color: #e91e63">${this.ma20Data[index].toFixed(2)}</span></div>`;
+                }
+                tooltipHTML += `</div>`;
+                
+                if (this.showRSI && this.rsiData[index] !== null) {
+                    tooltipHTML += `<div class="tooltip-section">`;
+                    tooltipHTML += `<div class="tooltip-section-title">RSI</div>`;
+                    const rsi = this.rsiData[index];
+                    const rsiColor = rsi > 70 ? '#f23645' : (rsi < 30 ? '#089981' : '#9c27b0');
+                    tooltipHTML += `<div class="tooltip-row"><span class="label">RSI(14)</span><span class="value" style="color: ${rsiColor}">${rsi.toFixed(2)}</span></div>`;
+                    tooltipHTML += `</div>`;
+                }
+                
+                if (this.showMACD) {
+                    const dif = this.macdData.dif[index];
+                    const dea = this.macdData.dea[index];
+                    const macd = this.macdData.macd[index];
+                    
+                    if (dif !== null || dea !== null || macd !== null) {
+                        tooltipHTML += `<div class="tooltip-section">`;
+                        tooltipHTML += `<div class="tooltip-section-title">MACD</div>`;
+                        if (dif !== null) {
+                            tooltipHTML += `<div class="tooltip-row"><span class="label">DIF</span><span class="value" style="color: #2962ff">${dif.toFixed(5)}</span></div>`;
+                        }
+                        if (dea !== null) {
+                            tooltipHTML += `<div class="tooltip-row"><span class="label">DEA</span><span class="value" style="color: #f9a825">${dea.toFixed(5)}</span></div>`;
+                        }
+                        if (macd !== null) {
+                            tooltipHTML += `<div class="tooltip-row"><span class="label">MACD柱</span><span class="value" style="color: ${macd >= 0 ? '#089981' : '#f23645'}">${macd.toFixed(5)}</span></div>`;
+                        }
+                        tooltipHTML += `</div>`;
+                    }
+                }
+                
+                if (this.showKDJ) {
+                    const k = this.kdjData.k[index];
+                    const d = this.kdjData.d[index];
+                    const j = this.kdjData.j[index];
+                    
+                    if (k !== null || d !== null || j !== null) {
+                        tooltipHTML += `<div class="tooltip-section">`;
+                        tooltipHTML += `<div class="tooltip-section-title">KDJ</div>`;
+                        if (k !== null) {
+                            tooltipHTML += `<div class="tooltip-row"><span class="label">K</span><span class="value" style="color: #ff9800">${k.toFixed(2)}</span></div>`;
+                        }
+                        if (d !== null) {
+                            tooltipHTML += `<div class="tooltip-row"><span class="label">D</span><span class="value" style="color: #4caf50">${d.toFixed(2)}</span></div>`;
+                        }
+                        if (j !== null) {
+                            tooltipHTML += `<div class="tooltip-row"><span class="label">J</span><span class="value" style="color: #e91e63">${j.toFixed(2)}</span></div>`;
+                        }
+                        tooltipHTML += `</div>`;
+                    }
+                }
+                
+                tooltip.innerHTML = tooltipHTML;
+                
+                const chartContainer = document.querySelector('.chart-container');
+                const containerRect = chartContainer.getBoundingClientRect();
+                let left = param.point.x + 20;
+                let top = param.point.y;
+                
+                if (left + 300 > containerRect.width) {
+                    left = param.point.x - 320;
+                }
+                if (top + 400 > containerRect.height) {
+                    top = containerRect.height - 420;
+                }
+                
+                tooltip.style.left = left + 'px';
+                tooltip.style.top = top + 'px';
+                tooltip.style.display = 'block';
+            }
+            
+            updateInfoPanel(dataPoint, index, signal) {
+                const signalTypeEl = document.getElementById('infoSignalType');
+                const signalConfidenceEl = document.getElementById('infoSignalConfidence');
+                const signalRemarkEl = document.getElementById('infoSignalRemark');
+                
+                if (signal) {
+                    signalTypeEl.textContent = signal.action_name;
+                    signalTypeEl.className = `info-value ${signal.action === 0 ? 'up' : 'down'}`;
+                    signalConfidenceEl.textContent = `${(signal.confidence * 100).toFixed(1)}%`;
+                    signalRemarkEl.textContent = signal.remark || '-';
+                } else {
+                    signalTypeEl.textContent = '无';
+                    signalTypeEl.className = 'info-value';
+                    signalConfidenceEl.textContent = '-';
+                    signalRemarkEl.textContent = '-';
+                }
+            }
+            
+            formatTime(timestamp) {
+                const date = new Date(timestamp * 1000);
+                return date.toLocaleString('zh-CN', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+            }
+            
+            formatVolume(volume) {
+                if (volume >= 1000000000) {
+                    return (volume / 1000000000).toFixed(2) + 'B';
+                } else if (volume >= 1000000) {
+                    return (volume / 1000000).toFixed(2) + 'M';
+                } else if (volume >= 1000) {
+                    return (volume / 1000).toFixed(2) + 'K';
+                }
+                return volume.toFixed(2);
+            }
+            
+            bindEvents() {
+                document.getElementById('loadBtn').addEventListener('click', () => {
+                    this.data = [];
+                    this.signalMap = new Map();
+                    this.loadedBefore = false;
+                    this.loadedAfter = false;
+                    this.loadData();
+                });
+                
+                window.addEventListener('popstate', () => {
+                    this.parseURLParams();
+                    this.data = [];
+                    this.signalMap = new Map();
+                    this.loadedBefore = false;
+                    this.loadedAfter = false;
+                    this.loadData();
+                });
+            }
+        }
+        
+        function initChartViewer() {
+            if (typeof LightweightCharts !== 'undefined') {
+                new KlineViewer();
+            } else {
+                console.error('LightweightCharts 库未加载');
+                alert('图表库未加载，请检查网络连接');
+            }
+        }
+
+        if (document.readyState === 'complete' || document.readyState === 'interactive') {
+            if (typeof LightweightCharts !== 'undefined') {
+                initChartViewer();
+            }
+        }
+    </script>
+</body>
+</html>
