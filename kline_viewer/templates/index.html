@@ -412,6 +412,14 @@
                         <option value="15m">15分钟</option>
                     </select>
                 </div>
+
+                <div class="control-group">
+                    <label>信号源</label>
+                    <select id="signalSource">
+                        <option value="1m">1分钟K线信号</option>
+                        <option value="1m+15m">1m+15m K线信号</option>
+                    </select>
+                </div>
                 
                 <div class="control-group">
                     <label>开始日期</label>
@@ -556,35 +564,37 @@
             
             parseURLParams() {
                 const params = new URLSearchParams(window.location.search);
-                
+
                 const exchange = params.get('exchange');
                 const instType = params.get('type');
                 const symbol = params.get('symbol');
                 const period = params.get('period');
+                const signalSource = params.get('signalSource');
                 const startDate = params.get('startDate');
                 const endDate = params.get('endDate');
-                
+
                 const showMA5 = params.get('showMA5');
                 const showMA10 = params.get('showMA10');
                 const showMA20 = params.get('showMA20');
                 const showRSI = params.get('showRSI');
                 const showMACD = params.get('showMACD');
                 const showKDJ = params.get('showKDJ');
-                
+
                 if (exchange) document.getElementById('exchange').value = exchange;
                 if (instType) document.getElementById('instType').value = instType;
                 if (symbol) document.getElementById('symbol').value = symbol;
                 if (period) document.getElementById('period').value = period;
+                if (signalSource) document.getElementById('signalSource').value = signalSource;
                 if (startDate) document.getElementById('startDate').value = startDate;
                 if (endDate) document.getElementById('endDate').value = endDate;
-                
+
                 if (showMA5 !== null) this.showMA5 = showMA5 === 'true';
                 if (showMA10 !== null) this.showMA10 = showMA10 === 'true';
                 if (showMA20 !== null) this.showMA20 = showMA20 === 'true';
                 if (showRSI !== null) this.showRSI = showRSI === 'true';
                 if (showMACD !== null) this.showMACD = showMACD === 'true';
                 if (showKDJ !== null) this.showKDJ = showKDJ === 'true';
-                
+
                 document.getElementById('showMA5').checked = this.showMA5;
                 document.getElementById('showMA10').checked = this.showMA10;
                 document.getElementById('showMA20').checked = this.showMA20;
@@ -599,6 +609,7 @@
                     instType: document.getElementById('instType').value,
                     symbol: document.getElementById('symbol').value,
                     period: document.getElementById('period').value,
+                    signalSource: document.getElementById('signalSource').value,
                     startDate: document.getElementById('startDate').value,
                     endDate: document.getElementById('endDate').value
                 };
@@ -611,6 +622,7 @@
                 url.searchParams.set('type', params.instType);
                 url.searchParams.set('symbol', params.symbol);
                 url.searchParams.set('period', params.period);
+                url.searchParams.set('signalSource', params.signalSource);
                 if (params.startDate) url.searchParams.set('startDate', params.startDate);
                 if (params.endDate) url.searchParams.set('endDate', params.endDate);
                 url.searchParams.set('showMA5', this.showMA5);
@@ -1101,13 +1113,13 @@
             
             async loadData(loadBefore = false, loadAfter = false) {
                 if (this.isLoading) return;
-                
+
                 this.isLoading = true;
                 document.getElementById('loading').style.display = 'block';
-                
+
                 try {
                     const params = this.getParams();
-                    let url = `/api/klines?exchange=${params.exchange}&type=${params.instType}&symbol=${params.symbol}&period=${params.period}`;
+                    let url = `/api/klines?exchange=${params.exchange}&type=${params.instType}&symbol=${params.symbol}&period=${params.period}&signal_source=${params.signalSource}`;
                     
                     if (loadBefore && this.data.length > 0) {
                         const earliestTime = this.data[0].time;

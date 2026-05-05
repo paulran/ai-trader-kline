@@ -292,9 +292,11 @@ class SignalStore:
         self.config = config or Config()
         self.config.create_directories()
     
-    def _get_db_path(self, exchange: str, inst_type: str, symbol: str, 
+    def _get_db_path(self, exchange: str, inst_type: str, symbol: str,
                      bar: str, year_month: str) -> str:
-        db_name = f"{exchange}_{inst_type}_{symbol}_{bar}_{year_month}_signals.db"
+        bar_for_filename = bar.replace(' ', '+')
+        db_name = f"{exchange}_{inst_type}_{symbol}_{bar_for_filename}_{year_month}_signals.db"
+        logger.debug(f"DB Path: {os.path.join(self.config.DATA_PATH, db_name)}, bar={bar}")
         return os.path.join(self.config.DATA_PATH, db_name)
     
     def _get_year_month_from_timestamp(self, timestamp: int) -> str:
@@ -430,19 +432,21 @@ class SignalStore:
         
         return months
     
-    def _get_all_available_year_months(self, exchange: str, inst_type: str, 
+    def _get_all_available_year_months(self, exchange: str, inst_type: str,
                                           symbol: str, bar: str) -> List[str]:
         data_path = Path(self.config.DATA_PATH)
-        prefix = f"{exchange}_{inst_type}_{symbol}_{bar}_"
+        bar_for_prefix = bar.replace(' ', '+')
+        prefix = f"{exchange}_{inst_type}_{symbol}_{bar_for_prefix}_"
+        logger.debug(f"Prefix: {prefix}, bar={bar}, bar_for_prefix={bar_for_prefix}")
         suffix = "_signals.db"
-        
+
         months = []
         for file_path in data_path.glob(f"{prefix}*_signals.db"):
             filename = file_path.stem
             ym_part = filename[len(prefix):-len("_signals")]
             if len(ym_part) == 6 and ym_part.isdigit():
                 months.append(ym_part)
-        
+
         return sorted(months)
     
     def get_signal_count(self, exchange: str, inst_type: str, symbol: str, bar: str,

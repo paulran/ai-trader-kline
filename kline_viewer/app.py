@@ -31,14 +31,15 @@ def get_klines():
         inst_type = request.args.get('type', 'SPOT')
         symbol = request.args.get('symbol', 'BTC-USDT')
         period = request.args.get('period', '1m')
+        signal_source = request.args.get('signal_source', '1m')
         start_time = request.args.get('start_time', None)
         end_time = request.args.get('end_time', None)
-        
-        print(f"API请求: exchange={exchange}, type={inst_type}, symbol={symbol}, period={period}")
-        
+
+        print(f"API请求: exchange={exchange}, type={inst_type}, symbol={symbol}, period={period}, signal_source={signal_source}")
+
         start_ts = None
         end_ts = None
-        
+
         if start_time:
             try:
                 if start_time.isdigit():
@@ -47,7 +48,7 @@ def get_klines():
                     start_ts = int(datetime.strptime(start_time, '%Y-%m-%d').timestamp())
             except Exception as e:
                 print(f"开始时间解析错误: {e}")
-        
+
         if end_time:
             try:
                 if end_time.isdigit():
@@ -56,7 +57,7 @@ def get_klines():
                     end_ts = int(datetime.strptime(end_time, '%Y-%m-%d').timestamp())
             except Exception as e:
                 print(f"结束时间解析错误: {e}")
-        
+
         df = kline_store.load_klines(
             exchange=exchange,
             inst_type=inst_type,
@@ -65,9 +66,9 @@ def get_klines():
             start_time=start_ts,
             end_time=end_ts
         )
-        
+
         print(f"加载K线数据: {len(df)} 条")
-        
+
         if df.empty:
             print("没有找到K线数据")
             return jsonify({
@@ -76,7 +77,7 @@ def get_klines():
                 'data': [],
                 'signals': []
             })
-        
+
         klines_data = []
         for idx, row in df.iterrows():
             klines_data.append({
@@ -87,18 +88,19 @@ def get_klines():
                 'close': float(row['Close']),
                 'volume': float(row['Volume'])
             })
-        
+
+        signal_bar = signal_source if signal_source == '1m 15m' else period
         signals_df = signal_store.load_signals(
             exchange=exchange,
             inst_type=inst_type,
             symbol=symbol,
-            bar=period,
+            bar=signal_bar,
             start_time=start_ts,
             end_time=end_ts
         )
-        
-        print(f"加载信号数据: {len(signals_df)} 条")
-        
+
+        print(f"加载信号数据: {len(signals_df)} 条 (bar={signal_bar})")
+
         signals_data = []
         if not signals_df.empty:
             for idx, row in signals_df.iterrows():
@@ -110,7 +112,7 @@ def get_klines():
                     'confidence': float(row['confidence']),
                     'remark': row['remark'] if pd.notna(row['remark']) else ''
                 })
-        
+
         result = {
             'success': True,
             'data': klines_data,
@@ -120,14 +122,15 @@ def get_klines():
                 'type': inst_type,
                 'symbol': symbol,
                 'period': period,
+                'signal_source': signal_source,
                 'count': len(klines_data)
             }
         }
-        
+
         print(f"返回数据: {len(klines_data)} 条K线, {len(signals_data)} 个信号")
-        
+
         return jsonify(result)
-        
+
     except Exception as e:
         print(f"API错误: {e}")
         traceback.print_exc()
