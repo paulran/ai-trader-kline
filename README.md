@@ -173,6 +173,30 @@ python main.py --mode realtime \
 | `--once` | 仅运行一次，不进行定时循环 | 不启用 |
 | `--no_align` | 禁用时间对齐（不延后10秒） | 不启用 |
 
+## K线可视化工具 (kline_viewer)
+
+kline_viewer 是一个基于Web的K线可视化工具，支持实时技术指标显示和交易信号分析。
+
+### 启动方式
+
+```bash
+python kline_viewer/app.py
+```
+
+启动后访问 `http://localhost:5000` 即可使用。
+
+### 功能特点
+
+- **实时K线图表**：基于Lightweight Charts的交互式K线图表
+- **技术指标叠加**：支持 SMA、RSI、MACD、KDJ、布林带等多种技术指标
+- **买卖信号提示**：自动标记买入/卖出信号
+- **时间周期选择**：支持 1分钟、5分钟、15分钟、1小时 等多种时间周期
+- **指标参数配置**：可自定义各指标的参数设置
+
+### 界面预览
+
+![K线查看器界面](docs/images/kline_viewer_1.png)
+
 ## 配置选项
 
 可以通过环境变量或修改`config.py`来自定义：
