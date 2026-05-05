@@ -329,34 +329,37 @@ class RealtimeAnalyzer:
             logger.error(f"发送飞书通知时发生错误: {str(e)}")
             return False
     
-    def initialize_trader(self, model_path: str = None, use_llm: bool = True):
+    def initialize_trader(self, model_path: str = None, use_llm: bool = True, use_rl: bool = True):
         logger.info("="*60)
         logger.info("初始化 AI Trader...")
         logger.info("="*60)
         
         self.trader = StockTrader(self.config)
         
-        model_loaded = False
-        if model_path:
-            try:
-                self.trader.load_trained_model(model_path)
-                model_loaded = True
-            except Exception as e:
-                logger.warning(f"警告: 加载指定模型失败: {e}")
-                logger.warning("将尝试使用默认模型路径，或仅使用LLM分析")
-        elif os.path.exists(self.config.BEST_MODEL_PATH):
-            try:
-                self.trader.load_trained_model(self.config.BEST_MODEL_PATH)
-                model_loaded = True
-            except Exception as e:
-                logger.warning(f"警告: 加载默认模型失败: {e}")
+        if use_rl:
+            model_loaded = False
+            if model_path:
+                try:
+                    self.trader.load_trained_model(model_path)
+                    model_loaded = True
+                except Exception as e:
+                    logger.warning(f"警告: 加载指定模型失败: {e}")
+                    logger.warning("将尝试使用默认模型路径，或仅使用LLM分析")
+            elif os.path.exists(self.config.BEST_MODEL_PATH):
+                try:
+                    self.trader.load_trained_model(self.config.BEST_MODEL_PATH)
+                    model_loaded = True
+                except Exception as e:
+                    logger.warning(f"警告: 加载默认模型失败: {e}")
+            else:
+                logger.info("提示: 未找到预训练模型，将仅使用LLM分析和规则分析")
+            
+            if not model_loaded:
+                logger.info("\n建议:")
+                logger.info("  1. 如需使用强化学习模型，请先运行: python main.py --mode train")
+                logger.info("  2. 当前将使用LLM分析和规则分析进行预测\n")
         else:
-            logger.info("提示: 未找到预训练模型，将仅使用LLM分析和规则分析")
-        
-        if not model_loaded:
-            logger.info("\n建议:")
-            logger.info("  1. 如需使用强化学习模型，请先运行: python main.py --mode train")
-            logger.info("  2. 当前将使用LLM分析和规则分析进行预测\n")
+            logger.info("强化学习模型已禁用，仅使用LLM分析和规则分析")
         
         if use_llm:
             self.trader.initialize_analyzer()
@@ -453,7 +456,7 @@ class RealtimeAnalyzer:
         logger.info("="*60 + "\n")
     
     def run_once(self, use_llm: bool = True, save_data: bool = True, 
-                  simulate_trade: bool = False, use_aligned_time: bool = True):
+                  simulate_trade: bool = False, use_aligned_time: bool = True, use_rl: bool = True):
         if use_aligned_time:
             wait_for_aligned_time(self.bar_type)
         
@@ -579,7 +582,7 @@ class RealtimeAnalyzer:
         )
     
     def start(self, use_llm: bool = True, save_data: bool = True, 
-               simulate_trade: bool = False, use_aligned_time: bool = True):
+               simulate_trade: bool = False, use_aligned_time: bool = True, use_rl: bool = True):
         logger.info("="*60)
         logger.info(f"实时K线分析器启动")
         logger.info(f"交易对: {self.config.OKX_INST_ID}")
@@ -588,6 +591,7 @@ class RealtimeAnalyzer:
         logger.info(f"时间对齐: {'是 (延后10秒)' if use_aligned_time else '否'}")
         logger.info(f"刷新间隔: {self.interval} 秒")
         logger.info(f"使用LLM: {'是' if use_llm else '否'}")
+        logger.info(f"使用强化学习: {'是' if use_rl else '否'}")
         logger.info(f"保存数据: {'是' if save_data else '否'}")
         logger.info(f"模拟交易: {'是' if simulate_trade else '否'}")
         logger.info("="*60)

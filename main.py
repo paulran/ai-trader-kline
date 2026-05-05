@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 from typing import Any
 
 from config import Config
@@ -279,13 +279,15 @@ def run_realtime_mode(config: Config, args: Any) -> None:
     )
     
     use_llm = not args.no_llm
+    use_rl = not args.no_rl
     save_data = not args.no_save
     simulate_trade = args.simulate
     use_aligned_time = not getattr(args, 'no_align', False)
     
     analyzer.initialize_trader(
-        model_path=args.model_path,
-        use_llm=use_llm
+        model_path=args.model_path if use_rl else None,
+        use_llm=use_llm,
+        use_rl=use_rl
     )
     
     if args.once:
@@ -293,14 +295,16 @@ def run_realtime_mode(config: Config, args: Any) -> None:
             use_llm=use_llm,
             save_data=save_data,
             simulate_trade=simulate_trade,
-            use_aligned_time=use_aligned_time
+            use_aligned_time=use_aligned_time,
+            use_rl=use_rl
         )
     else:
         analyzer.start(
             use_llm=use_llm,
             save_data=save_data,
             simulate_trade=simulate_trade,
-            use_aligned_time=use_aligned_time
+            use_aligned_time=use_aligned_time,
+            use_rl=use_rl
         )
 
 
@@ -335,6 +339,9 @@ def parse_args():
     
     parser.add_argument('--no_llm', action='store_true', default=False,
                         help='禁用LLM分析，仅使用规则分析和强化学习 [仅realtime模式]')
+
+    parser.add_argument('--no_rl', action='store_true', default=False,
+                        help='禁用强化学习模型，仅使用LLM分析和规则分析 [仅realtime模式]')
     
     parser.add_argument('--no_save', action='store_true', default=False,
                         help='不保存K线数据到SQLite数据库 [仅realtime模式]')

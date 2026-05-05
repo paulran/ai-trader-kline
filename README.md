@@ -141,6 +141,11 @@ python main.py --mode realtime --bar 1m --once
 python main.py --mode realtime --bar 1m --simulate
 ```
 
+**禁用强化学习模型**（仅使用LLM分析）：
+```bash
+python main.py --mode realtime --bar 1m --no_rl
+```
+
 **禁用LLM分析**（仅使用规则分析）：
 ```bash
 python main.py --mode realtime --bar 1m --no_llm
